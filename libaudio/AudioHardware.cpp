@@ -461,6 +461,14 @@ static status_t do_route_audio_rpc(uint32_t device,
     struct msm_snd_device_config args;
     args.device = device;
     args.ear_mute = ear_mute ? SND_MUTE_MUTED : SND_MUTE_UNMUTED;
+    if((device != SND_DEVICE_CURRENT) && (!mic_mute)) {
+        //Explicitly mute the mic to release DSP resources
+        args.mic_mute = SND_MUTE_MUTED;
+        if (ioctl(m7xsnddriverfd, SND_SET_DEVICE, &args) < 0) {
+            LOGE("snd_set_device error.");
+            return -EIO;
+        }
+    }
     args.mic_mute = mic_mute ? SND_MUTE_MUTED : SND_MUTE_UNMUTED;
 
     if (ioctl(fd, SND_SET_DEVICE, &args) < 0) {
