@@ -30,6 +30,7 @@
 #include <sys/ioctl.h>
 #include <string.h>
 #include <stdlib.h>
+#include <pthread.h>
 
 #include <cutils/log.h>
 #include <cutils/atomic.h>
@@ -41,11 +42,12 @@
 
 #include "gralloc_priv.h"
 #include "gr.h"
+#ifdef NO_SURFACEFLINGER_SWAPINTERVAL
+#include <cutils/properties.h>
+#endif
 
 /*****************************************************************************/
 
-// numbers of buffers for page flipping
-#define NUM_BUFFERS 2
 
 
 enum {
@@ -68,9 +70,13 @@ static int fb_setSwapInterval(struct framebuffer_device_t* dev,
             int interval)
 {
     fb_context_t* ctx = (fb_context_t*)dev;
+
+    private_module_t* m = reinterpret_cast<private_module_t*>(
+            dev->common.module);
     if (interval < dev->minSwapInterval || interval > dev->maxSwapInterval)
         return -EINVAL;
-    // FIXME: implement fb_setSwapInterval
+
+    m->swapInterval = interval;
     return 0;
 }
 
@@ -89,38 +95,101 @@ static int fb_setUpdateRect(struct framebuffer_device_t* dev,
     return 0;
 }
 
+static void *disp_loop(void *ptr)
+{
+    struct qbuf_t nxtBuf;
+    static int cur_buf=-1;
+    private_module_t *m = reinterpret_cast<private_module_t*>(ptr);
+
+    while (1) {
+        pthread_mutex_lock(&(m->qlock));
+
+        // wait (sleep) while display queue is empty;
+        if (m->disp.isEmpty()) {
+            pthread_cond_wait(&(m->qpost),&(m->qlock));
+        }
+
+        // dequeue next buff to display and lock it
+        nxtBuf = m->disp.getHeadValue();
+        m->disp.pop();
+        pthread_mutex_lock(&(m->avail[nxtBuf.idx]));
+        pthread_mutex_unlock(&(m->qlock));
+
+        // post buf out to display synchronously
+        private_handle_t const* hnd = reinterpret_cast<private_handle_t const*>(nxtBuf.buf);
+        const size_t offset = hnd->base - m->framebuffer->base;
+        m->info.activate = FB_ACTIVATE_VBL;
+        m->info.yoffset = offset / m->finfo.line_length;
+
+
+        if (ioctl(m->framebuffer->fd, FBIOPUT_VSCREENINFO, &m->info) == -1) {
+            LOGE("ERROR FBIOPUT_VSCREENINFO failed; frame not displayed");
+        }
+
+        // mark buf as avail (unlocked)
+        if (m->lcdc_mode) {
+            if (cur_buf != -1) {
+                pthread_mutex_unlock(&(m->avail[cur_buf]));
+            }
+            cur_buf = nxtBuf.idx;
+        } else {
+            pthread_mutex_unlock(&(m->avail[nxtBuf.idx]));
+        }
+    }
+    return NULL;
+}
+
 static int fb_post(struct framebuffer_device_t* dev, buffer_handle_t buffer)
 {
     if (private_handle_t::validate(buffer) < 0)
         return -EINVAL;
 
+    int nxtIdx;
+    bool reuse;
+    struct qbuf_t qb;
     fb_context_t* ctx = (fb_context_t*)dev;
 
     private_handle_t const* hnd = reinterpret_cast<private_handle_t const*>(buffer);
     private_module_t* m = reinterpret_cast<private_module_t*>(
             dev->common.module);
     
-    if (m->currentBuffer) {
-        m->base.unlock(&m->base, m->currentBuffer);
-        m->currentBuffer = 0;
-    }
+
 
     if (hnd->flags & private_handle_t::PRIV_FLAGS_FRAMEBUFFER) {
 
-        m->base.lock(&m->base, buffer, 
-                private_module_t::PRIV_USAGE_LOCKED_FOR_POST, 
-                0, 0, m->info.xres, m->info.yres, NULL);
-
-        const size_t offset = hnd->base - m->framebuffer->base;
-        m->info.activate = FB_ACTIVATE_VBL;
-        m->info.yoffset = offset / m->finfo.line_length;
-        if (ioctl(m->framebuffer->fd, FBIOPUT_VSCREENINFO, &m->info) == -1) {
-            LOGE("FBIOPUT_VSCREENINFO failed");
-            m->base.unlock(&m->base, buffer); 
-            return -errno;
+        reuse = false;
+        nxtIdx = (m->currentIdx + 1) % NUM_BUFFERS;
+        if (m->swapInterval == 0) {
+            // if SwapInterval = 0 and no buffers available then reuse
+            // current buf for next rendering so don't post or swap
+            if (pthread_mutex_trylock(&(m->avail[nxtIdx]))) {
+                reuse = true;
+            } else {
+                pthread_mutex_unlock(&(m->avail[nxtIdx]));
+            }
+        } else {    // swapInterval = 1
+            if (m->lcdc_mode && (NUM_BUFFERS == 2)) {
+                // FIXME:  lcdc buf not avail till this one posted
+                // thus might need to pre-post buffer in this case
+            } else {
+                // make sure prior posting of this buf is avail
+                pthread_mutex_lock(&(m->avail[nxtIdx]));
+                pthread_mutex_unlock(&(m->avail[nxtIdx]));
+            }
         }
-        m->currentBuffer = buffer;
-        
+
+        if(!reuse){
+            // post/queue buffer
+            qb.idx = nxtIdx;
+            qb.buf = buffer;
+            pthread_mutex_lock(&(m->qlock));
+            m->disp.push(qb);
+            pthread_cond_signal(&(m->qpost));
+            pthread_mutex_unlock(&(m->qlock));
+
+            m->currentIdx = nxtIdx;
+        }
+
     } else {
         void* fb_vaddr;
         void* buffer_vaddr;
@@ -320,6 +389,38 @@ int mapFrameBufferLocked(struct private_module_t* module)
     module->ydpi = ydpi;
     module->fps = fps;
 
+#ifdef NO_SURFACEFLINGER_SWAPINTERVAL
+    char pval[PROPERTY_VALUE_MAX];
+    property_get("debug.gr.swapinterval", pval, "1");
+    module->swapInterval = atoi(pval);
+    if (module->swapInterval < private_module_t::PRIV_MIN_SWAP_INTERVAL ||
+        module->swapInterval > private_module_t::PRIV_MAX_SWAP_INTERVAL) {
+        module->swapInterval = 1;
+        LOGW("Out of range (%d to %d) value for debug.gr.swapinterval, using 1",
+             private_module_t::PRIV_MIN_SWAP_INTERVAL,
+             private_module_t::PRIV_MAX_SWAP_INTERVAL);
+    }
+
+#else
+    // when surfaceflinger supports swapInterval then can just do this
+    module->swapInterval = 1;
+#endif
+
+    module->currentIdx = -1;
+    pthread_cond_init(&(module->qpost), NULL);
+    pthread_mutex_init(&(module->qlock), NULL);
+    for (i = 0; i < NUM_BUFFERS; i++) {
+        pthread_mutex_init(&(module->avail[i]), NULL);
+    }
+    module->lcdc_mode = false; // FIXME: make dynamic based on actual panel
+
+    // create display update thread
+    pthread_t thread1;
+    if (pthread_create(&thread1, NULL, &disp_loop, (void *) module)) {
+         return -errno;
+    }
+
+
     /*
      * map the framebuffer
      */
@@ -397,8 +498,8 @@ int fb_device_open(hw_module_t const* module, const char* name,
             const_cast<float&>(dev->device.xdpi) = m->xdpi;
             const_cast<float&>(dev->device.ydpi) = m->ydpi;
             const_cast<float&>(dev->device.fps) = m->fps;
-            const_cast<int&>(dev->device.minSwapInterval) = 1;
-            const_cast<int&>(dev->device.maxSwapInterval) = 1;
+            const_cast<int&>(dev->device.minSwapInterval) = private_module_t::PRIV_MIN_SWAP_INTERVAL;
+            const_cast<int&>(dev->device.maxSwapInterval) = private_module_t::PRIV_MAX_SWAP_INTERVAL;
 
             if (m->finfo.reserved[0] == 0x5444 &&
                     m->finfo.reserved[1] == 0x5055) {
