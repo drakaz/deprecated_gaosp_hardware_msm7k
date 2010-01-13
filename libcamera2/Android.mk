@@ -1,4 +1,4 @@
-BUILD_LIBCAMERA:=
+BUILD_LIBCAMERA:= true
 ifeq ($(BUILD_LIBCAMERA),true)
 
 # When zero we link against libmmcamera; when 1, we dlopen libmmcamera.
@@ -20,7 +20,7 @@ LOCAL_C_INCLUDES+= \
 	vendor/qcom/proprietary/mm-camera/jpeg \
 	vendor/qcom/proprietary/mm-camera/jpeg/inc
 
-LOCAL_SHARED_LIBRARIES:= libutils libui liblog
+LOCAL_SHARED_LIBRARIES:= libbinder libutils libui liblog
 
 ifneq ($(DLOPEN_LIBMMCAMERA),1)
 LOCAL_SHARED_LIBRARIES+= libqcamera

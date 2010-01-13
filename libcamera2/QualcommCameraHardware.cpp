@@ -21,7 +21,7 @@
 #include "QualcommCameraHardware.h"
 
 #include <utils/threads.h>
-#include <utils/MemoryHeapPmem.h>
+#include <binder/MemoryHeapPmem.h>
 #include <utils/String16.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -53,10 +53,6 @@ extern "C" {
 #include <stdlib.h>
 
 #include <media/msm_camera.h>
-
-#include <camera.h>
-#include <camframe.h>
-#include <jpeg_encoder.h>
 
 #define THUMBNAIL_WIDTH        512
 #define THUMBNAIL_HEIGHT       384
@@ -227,22 +223,18 @@ QualcommCameraHardware::QualcommCameraHardware()
       mFrameThreadRunning(false),
       mSnapshotThreadRunning(false),
       mReleasedRecordingFrame(false),
-      mShutterCallback(0),
-      mRawPictureCallback(0),
-      mJpegPictureCallback(0),
-      mPictureCallbackCookie(0),
-      mAutoFocusCallback(0),
-      mAutoFocusCallbackCookie(0),
-      mPreviewCallback(0),
-      mPreviewCallbackCookie(0),
-      mRecordingCallback(0),
-      mRecordingCallbackCookie(0),
+      mNotifyCb(0),
+      mDataCb(0),
+      mDataCbTimestamp(0),
+      mCallbackCookie(0),
+      mMsgEnabled(0),
       mPreviewFrameSize(0),
       mRawSize(0),
       mCameraControlFd(-1),
       mAutoFocusThreadRunning(false),
       mAutoFocusFd(-1),
-      mInPreviewCallback(false)
+      mInPreviewCallback(false),
+      mCameraRecording(false)
 {
     memset(&mDimension, 0, sizeof(mDimension));
     memset(&mCrop, 0, sizeof(mCrop));
@@ -295,6 +287,37 @@ void QualcommCameraHardware::initDefaultParameters()
 
     LOGV("initDefaultParameters X");
 }
+
+void QualcommCameraHardware::setCallbacks(notify_callback notify_cb,
+                                      data_callback data_cb,
+                                      data_callback_timestamp data_cb_timestamp,
+                                      void* user)
+{
+    Mutex::Autolock lock(mLock);
+    mNotifyCb = notify_cb;
+    mDataCb = data_cb;
+    mDataCbTimestamp = data_cb_timestamp;
+    mCallbackCookie = user;
+}
+
+void QualcommCameraHardware::enableMsgType(int32_t msgType)
+{
+    Mutex::Autolock lock(mLock);
+    mMsgEnabled |= msgType;
+}
+
+void QualcommCameraHardware::disableMsgType(int32_t msgType)
+{
+    Mutex::Autolock lock(mLock);
+    mMsgEnabled &= ~msgType;
+}
+
+bool QualcommCameraHardware::msgTypeEnabled(int32_t msgType)
+{
+    Mutex::Autolock lock(mLock);
+    return (mMsgEnabled & msgType);
+}
+
 
 #define ROUND_TO_PAGE(x)  (((x)+0xfff)&~0xfff)
 
@@ -498,6 +521,7 @@ static bool native_get_picture (int camfd, common_crop_t *crop)
 
     LOGV("crop: update %d", crop->update_flag);
 
+
     return true;
 }
 
@@ -604,6 +628,7 @@ bool QualcommCameraHardware::native_jpeg_encode(void)
 
 bool QualcommCameraHardware::native_set_dimension(cam_ctrl_dimension_t *value)
 {
+    LOGE("native_set_dimension: length: %d.", sizeof(cam_ctrl_dimension_t));
     return native_set_parm(CAMERA_SET_PARM_DIMENSION,
                            sizeof(cam_ctrl_dimension_t), value);
 }
@@ -732,6 +757,7 @@ bool QualcommCameraHardware::initPreview()
     // See comments in deinitPreview() for why we have to wait for the frame
     // thread here, and why we can't use pthread_join().
     LOGI("initPreview E: preview size=%dx%d", mPreviewWidth, mPreviewHeight);
+    LOGV("running custom built libcamera.so");
     mFrameThreadWaitLock.lock();
     while (mFrameThreadRunning) {
         LOGV("initPreview: waiting for old frame thread to complete.");
@@ -897,7 +923,7 @@ bool QualcommCameraHardware::initRaw(bool initJpegHeap)
         mThumbnailHeap =
             new PmemPool("/dev/pmem_adsp",
                          mCameraControlFd,
-                         MSM_PMEM_THUMBAIL,
+                         MSM_PMEM_THUMBNAIL,
                          THUMBNAIL_BUFFER_SIZE,
                          1,
                          THUMBNAIL_BUFFER_SIZE,
@@ -946,7 +972,7 @@ void QualcommCameraHardware::release()
     struct msm_ctrl_cmd ctrlCmd;
 
     if (mCameraRunning) {
-        if(mRecordingCallback != NULL) {
+        if(mMsgEnabled & CAMERA_MSG_VIDEO_FRAME) {
             mRecordFrameLock.lock();
             mReleasedRecordingFrame = true;
             mRecordWait.signal();
@@ -1037,16 +1063,10 @@ status_t QualcommCameraHardware::startPreviewInternal()
     return NO_ERROR;
 }
 
-status_t QualcommCameraHardware::startPreview(preview_callback cb, void *user)
+status_t QualcommCameraHardware::startPreview()
 {
     LOGV("startPreview E");
     Mutex::Autolock l(&mLock);
-
-    {
-        Mutex::Autolock cbLock(&mCallbackLock);
-        mPreviewCallback = cb;
-        mPreviewCallbackCookie = user;
-    }
 
     return startPreviewInternal();
 }
@@ -1056,15 +1076,12 @@ void QualcommCameraHardware::stopPreviewInternal()
     LOGV("stopPreviewInternal E: %d", mCameraRunning);
     if (mCameraRunning) {
         // Cancel auto focus.
-        if (mAutoFocusCallback) {
-            {
-                Mutex::Autolock cbLock(&mCallbackLock);
-                mAutoFocusCallback = NULL;
-                mAutoFocusCallbackCookie = NULL;
-            }
+        if (mMsgEnabled & CAMERA_MSG_FOCUS) {
+            LOGV("canceling autofocus");
             cancelAutoFocus();
         }
 
+        LOGV("Stopping preview");
         mCameraRunning = !native_stop_preview(mCameraControlFd);
         if (!mCameraRunning && mPreviewInitialized) {
             deinitPreview();
@@ -1080,13 +1097,8 @@ void QualcommCameraHardware::stopPreview()
     LOGV("stopPreview: E");
     Mutex::Autolock l(&mLock);
 
-    {
-        Mutex::Autolock cbLock(&mCallbackLock);
-        mPreviewCallback = NULL;
-        mPreviewCallbackCookie = NULL;
-        if(mRecordingCallback != NULL)
+    if(mMsgEnabled & CAMERA_MSG_VIDEO_FRAME)
            return;
-    }
 
     stopPreviewInternal();
 
@@ -1132,17 +1144,8 @@ void QualcommCameraHardware::runAutoFocus()
     mAutoFocusFd = -1;
     mAutoFocusThreadLock.unlock();
 
-    mCallbackLock.lock();
-    autofocus_callback cb = mAutoFocusCallback;
-    void *data = mAutoFocusCallbackCookie;
-    mCallbackLock.unlock();
-    if (cb != NULL)
-        cb(status, data);
-
-    mCallbackLock.lock();
-    mAutoFocusCallback = NULL;
-    mAutoFocusCallbackCookie = NULL;
-    mCallbackLock.unlock();
+    if (mMsgEnabled & CAMERA_MSG_FOCUS)
+        mNotifyCb(CAMERA_MSG_FOCUS, status, 0, mCallbackCookie);
 
 #if DLOPEN_LIBMMCAMERA
     if (libhandle) {
@@ -1152,11 +1155,14 @@ void QualcommCameraHardware::runAutoFocus()
 #endif
 }
 
-void QualcommCameraHardware::cancelAutoFocus()
+status_t QualcommCameraHardware::cancelAutoFocus()
 {
     LOGV("cancelAutoFocus E");
     native_cancel_afmode(mCameraControlFd, mAutoFocusFd);
     LOGV("cancelAutoFocus X");
+
+    /* Needed for eclair camera PAI */
+    return NO_ERROR;
 }
 
 void *auto_focus_thread(void *user)
@@ -1171,8 +1177,7 @@ void *auto_focus_thread(void *user)
     return NULL;
 }
 
-status_t QualcommCameraHardware::autoFocus(autofocus_callback af_cb,
-                                           void *user)
+status_t QualcommCameraHardware::autoFocus()
 {
     LOGV("autoFocus E");
     Mutex::Autolock l(&mLock);
@@ -1182,16 +1187,13 @@ status_t QualcommCameraHardware::autoFocus(autofocus_callback af_cb,
         return UNKNOWN_ERROR;
     }
 
-    if (mAutoFocusCallback != NULL) {
+    /* Not sure this is still needed with new APIs .. 
+    if (mMsgEnabled & CAMERA_MSG_FOCUS) {
         LOGW("Auto focus is already in progress");
-        return mAutoFocusCallback == af_cb ? NO_ERROR : INVALID_OPERATION;
-    }
-
-    {
-        Mutex::Autolock cbl(&mCallbackLock);
-        mAutoFocusCallback = af_cb;
-        mAutoFocusCallbackCookie = user;
-    }
+        return NO_ERROR;
+        // No idea how to rewrite this
+        //return mAutoFocusCallback == af_cb ? NO_ERROR : INVALID_OPERATION;
+    }*/
 
     {
         mAutoFocusThreadLock.lock();
@@ -1246,13 +1248,9 @@ void *snapshot_thread(void *user)
     return NULL;
 }
 
-status_t QualcommCameraHardware::takePicture(shutter_callback shutter_cb,
-                                             raw_callback raw_cb,
-                                             jpeg_callback jpeg_cb,
-                                             void *user)
+status_t QualcommCameraHardware::takePicture()
 {
-    LOGV("takePicture: E raw_cb = %p, jpeg_cb = %p",
-         raw_cb, jpeg_cb);
+    LOGV("takePicture: E");
     Mutex::Autolock l(&mLock);
 
     // Wait for old snapshot thread to complete.
@@ -1265,17 +1263,9 @@ status_t QualcommCameraHardware::takePicture(shutter_callback shutter_cb,
 
     stopPreviewInternal();
 
-    if (!initRaw(jpeg_cb != NULL)) {
+    if (!initRaw(mMsgEnabled & CAMERA_MSG_COMPRESSED_IMAGE)) { /* not sure if this is right */
         LOGE("initRaw failed.  Not taking picture.");
         return UNKNOWN_ERROR;
-    }
-
-    {
-        Mutex::Autolock cbLock(&mCallbackLock);
-        mShutterCallback = shutter_cb;
-        mRawPictureCallback = raw_cb;
-        mJpegPictureCallback = jpeg_cb;
-        mPictureCallbackCookie = user;
     }
 
     mShutterLock.lock();
@@ -1295,22 +1285,10 @@ status_t QualcommCameraHardware::takePicture(shutter_callback shutter_cb,
     return mSnapshotThreadRunning ? NO_ERROR : UNKNOWN_ERROR;
 }
 
-status_t QualcommCameraHardware::cancelPicture(
-     bool cancel_shutter, bool cancel_raw, bool cancel_jpeg)
+status_t QualcommCameraHardware::cancelPicture()
 {
-    LOGV("cancelPicture: E cancel_shutter = %d, "
-         "cancel_raw = %d, cancel_jpeg = %d",
-         cancel_shutter, cancel_raw, cancel_jpeg);
-    Mutex::Autolock l(&mLock);
+    LOGV("cancelPicture: EX");
 
-    {
-        Mutex::Autolock cbLock(&mCallbackLock);
-        if (cancel_shutter) mShutterCallback = NULL;
-        if (cancel_raw) mRawPictureCallback = NULL;
-        if (cancel_jpeg) mJpegPictureCallback = NULL;
-    }
-
-    LOGV("cancelPicture: X");
     return NO_ERROR;
 }
 
@@ -1457,12 +1435,13 @@ void QualcommCameraHardware::receivePreviewFrame(struct msm_frame *frame)
         return;
     }
 
-    mCallbackLock.lock();
+    // Why is this here?
+    /*mCallbackLock.lock();
     preview_callback pcb = mPreviewCallback;
     void *pdata = mPreviewCallbackCookie;
     recording_callback rcb = mRecordingCallback;
     void *rdata = mRecordingCallbackCookie;
-    mCallbackLock.unlock();
+    mCallbackLock.unlock(); */
 
     // Find the offset within the heap of the current buffer.
     ssize_t offset =
@@ -1472,11 +1451,22 @@ void QualcommCameraHardware::receivePreviewFrame(struct msm_frame *frame)
     //LOGV("%d\n", offset);
 
     mInPreviewCallback = true;
-    if (pcb != NULL)
-        pcb(mPreviewHeap->mBuffers[offset],
-            pdata);
+    if (mMsgEnabled & CAMERA_MSG_PREVIEW_FRAME)
+        mDataCb(CAMERA_MSG_PREVIEW_FRAME, mPreviewHeap->mBuffers[offset], mCallbackCookie);
 
-    if(rcb != NULL) {
+    if (mMsgEnabled & CAMERA_MSG_VIDEO_FRAME) {
+        Mutex::Autolock rLock(&mRecordFrameLock);
+        mDataCbTimestamp(systemTime(), CAMERA_MSG_VIDEO_FRAME, mPreviewHeap->mBuffers[offset], mCallbackCookie); /* guess? */
+        //mDataCb(CAMERA_MSG_VIDEO_FRAME, mPreviewHeap->mBuffers[offset], mCallbackCookie);
+
+        if (mReleasedRecordingFrame != true) {
+            LOGV("block for release frame request/command");
+            mRecordWait.wait(mRecordFrameLock);
+        }
+        mReleasedRecordingFrame = false;
+    }
+
+    /*if(mMsgEnabled & CAMERA_MSG_VIDEO_IMAGE) {
         Mutex::Autolock rLock(&mRecordFrameLock);
         rcb(systemTime(), mPreviewHeap->mBuffers[offset], rdata);
         if (mReleasedRecordingFrame != true) {
@@ -1484,25 +1474,19 @@ void QualcommCameraHardware::receivePreviewFrame(struct msm_frame *frame)
             mRecordWait.wait(mRecordFrameLock);
         }
         mReleasedRecordingFrame = false;
-    }
+    }*/
     mInPreviewCallback = false;
 
 //    LOGV("receivePreviewFrame X");
 }
 
-status_t QualcommCameraHardware::startRecording(
-    recording_callback rcb, void *ruser)
+status_t QualcommCameraHardware::startRecording()
 {
     LOGV("startRecording E");
     Mutex::Autolock l(&mLock);
 
-    {
-        Mutex::Autolock cbLock(&mCallbackLock);
-        mRecordingCallback = rcb;
-        mRecordingCallbackCookie = ruser;
-    }
-
     mReleasedRecordingFrame = false;
+    mCameraRecording = true;
 
     return startPreviewInternal();
 }
@@ -1513,16 +1497,14 @@ void QualcommCameraHardware::stopRecording()
     Mutex::Autolock l(&mLock);
 
     {
-        Mutex::Autolock cbLock(&mCallbackLock);
-        mRecordingCallback = NULL;
-        mRecordingCallbackCookie = NULL;
-
         mRecordFrameLock.lock();
         mReleasedRecordingFrame = true;
         mRecordWait.signal();
         mRecordFrameLock.unlock();
 
-        if(mPreviewCallback != NULL) {
+        mCameraRecording = false;
+
+        if(mMsgEnabled & CAMERA_MSG_PREVIEW_FRAME) {
             LOGV("stopRecording: X, preview still in progress");
             return;
         }
@@ -1545,15 +1527,14 @@ void QualcommCameraHardware::releaseRecordingFrame(
 
 bool QualcommCameraHardware::recordingEnabled()
 {
-    Mutex::Autolock l(&mLock);
-    return mCameraRunning && mRecordingCallback != NULL;
+    return (mCameraRunning && mCameraRecording);
 }
 
 void QualcommCameraHardware::notifyShutter()
 {
     mShutterLock.lock();
-    if (mShutterPending && mShutterCallback) {
-        mShutterCallback(mPictureCallbackCookie);
+    if (mShutterPending && (mMsgEnabled & CAMERA_MSG_SHUTTER)) {
+        mNotifyCb(CAMERA_MSG_SHUTTER, 0, 0, mCallbackCookie);
         mShutterPending = false;
     }
     mShutterLock.unlock();
@@ -1573,9 +1554,7 @@ void QualcommCameraHardware::receiveRawPicture()
 {
     LOGV("receiveRawPicture: E");
 
-    Mutex::Autolock cbLock(&mCallbackLock);
-
-    if (mRawPictureCallback != NULL) {
+    if (mMsgEnabled & CAMERA_MSG_RAW_IMAGE) {
         if(native_get_picture(mCameraControlFd, &mCrop) == false) {
             LOGE("getPicture failed!");
             return;
@@ -1584,12 +1563,11 @@ void QualcommCameraHardware::receiveRawPicture()
         // By the time native_get_picture returns, picture is taken. Call
         // shutter callback if cam config thread has not done that.
         notifyShutter();
-        mRawPictureCallback(mRawHeap->mBuffers[0],
-                            mPictureCallbackCookie);
+        mDataCb(CAMERA_MSG_RAW_IMAGE, mRawHeap->mBuffers[0], mCallbackCookie);
     }
     else LOGV("Raw-picture callback was canceled--skipping.");
 
-    if (mJpegPictureCallback != NULL) {
+    if (mMsgEnabled & CAMERA_MSG_COMPRESSED_IMAGE) {
         mJpegSize = 0;
         if (LINK_jpeg_encoder_init()) {
             if(native_jpeg_encode()) {
@@ -1628,11 +1606,10 @@ void QualcommCameraHardware::receiveJpegPicture(void)
 {
     LOGV("receiveJpegPicture: E image (%d uint8_ts out of %d)",
          mJpegSize, mJpegHeap->mBufferSize);
-    Mutex::Autolock cbLock(&mCallbackLock);
 
     int index = 0, rc;
 
-    if (mJpegPictureCallback) {
+    if (mMsgEnabled & CAMERA_MSG_COMPRESSED_IMAGE) {
         // The reason we do not allocate into mJpegHeap->mBuffers[offset] is
         // that the JPEG image's size will probably change from one snapshot
         // to the next, so we cannot reuse the MemoryBase object.
@@ -1642,7 +1619,7 @@ void QualcommCameraHardware::receiveJpegPicture(void)
                        mJpegHeap->mFrameOffset,
                        mJpegSize);
 
-        mJpegPictureCallback(buffer, mPictureCallbackCookie);
+        mDataCb(CAMERA_MSG_COMPRESSED_IMAGE, buffer, mCallbackCookie);
         buffer = NULL;
     }
     else LOGV("JPEG callback was cancelled--not delivering image.");
@@ -1655,8 +1632,8 @@ void QualcommCameraHardware::receiveJpegPicture(void)
 
 bool QualcommCameraHardware::previewEnabled()
 {
-//  Mutex::Autolock l(&mLock);
-    return mCameraRunning && mPreviewCallback != NULL;
+    Mutex::Autolock l(&mLock);
+    return (mCameraRunning && (mMsgEnabled & CAMERA_MSG_PREVIEW_FRAME));
 }
 
 int QualcommCameraHardware::getParm(
@@ -1870,7 +1847,7 @@ static bool register_buf(int camfd,
     pmemBuf.len      = size;
     pmemBuf.vaddr    = buf;
     pmemBuf.y_off    = 0;
-    pmemBuf.cbcr_off = PAD_TO_WORD(size * 2 / 3);
+    pmemBuf.cbcr_off = size * 2 / 3; //PAD_TO_WORD(size * 2 / 3);
     pmemBuf.active   = true;
 
     LOGV("register_buf: camfd = %d, reg = %d buffer = %p",
@@ -1941,6 +1918,13 @@ static void receive_jpeg_callback(jpeg_event_t status)
         }
     }
     LOGV("receive_jpeg_callback X");
+}
+
+status_t QualcommCameraHardware::sendCommand(int32_t command, int32_t arg1,
+                                             int32_t arg2)
+{
+    LOGV("sendCommand: EX");
+    return BAD_VALUE;
 }
 
 }; // namespace android
