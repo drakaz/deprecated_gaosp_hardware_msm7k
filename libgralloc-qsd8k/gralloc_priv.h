@@ -30,96 +30,9 @@
 #include <linux/fb.h>
 
 /*****************************************************************************/
-#ifdef __cplusplus
-template <class T>
-struct Node
-{
-    T data;
-    Node<T> *next;
-};
-
-template <class T>
-class Queue
-{
-public:
-    Queue(): front(NULL), back(NULL), len(0) {dummy = new T;}
-    ~Queue()
-    {
-        clear();
-        delete dummy;
-    }
-    void push(const T& item)   //add an item to the back of the queue
-    {
-        if(len != 0) {         //if the queue is not empty
-            back->next = new Node<T>; //create a new node
-            back = back->next; //set the new node as the back node
-            back->data = item;
-            back->next = NULL;
-        } else {
-            back = new Node<T>;
-            back->data = item;
-            back->next = NULL;
-            front = back;
-       }
-       len++;
-    }
-    void pop()                 //remove the first item from the queue
-    {
-        if (isEmpty())
-            return;            //if the queue is empty, no node to dequeue
-        T item = front->data;
-        Node<T> *tmp = front;
-        front = front->next;
-        delete tmp;
-        if(front == NULL)      //if the queue is empty, update the back pointer
-            back = NULL;
-        len--;
-        return;
-    }
-    T& getHeadValue() const    //return the value of the first item in the queue
-    {                          //without modification to the structure
-        if (isEmpty()) {
-            LOGE("Error can't get head of empty queue");
-            return *dummy;
-        }
-        return front->data;
-    }
-
-    bool isEmpty() const       //returns true if no elements are in the queue
-    {
-        return (front == NULL);
-    }
-
-    size_t size() const        //returns the amount of elements in the queue
-    {
-        return len;
-    }
-
-private:
-    Node<T> *front;
-    Node<T> *back;
-    size_t len;
-    void clear()
-    {
-        while (!isEmpty())
-            pop();
-    }
-    T *dummy;
-};
-#endif
 
 struct private_module_t;
 struct private_handle_t;
-
-// numbers of buffers for page flipping
-#define NUM_BUFFERS 2
-
-#define NO_SURFACEFLINGER_SWAPINTERVAL
-
-struct qbuf_t {
-    buffer_handle_t buf;
-    int  idx;
-};
 
 struct private_module_t {
     gralloc_module_t base;
@@ -139,22 +52,10 @@ struct private_module_t {
     float xdpi;
     float ydpi;
     float fps;
-
-    int swapInterval;
-#ifdef __cplusplus
-    Queue<struct qbuf_t> disp; // non-empty when buffer is ready for display
-    bool lcdc_mode;
-#endif
-    int currentIdx;
-    pthread_mutex_t avail[NUM_BUFFERS];
-    pthread_mutex_t qlock;
-    pthread_cond_t qpost;
-
+    
     enum {
         // flag to indicate we'll post this buffer
-        PRIV_USAGE_LOCKED_FOR_POST = 0x80000000,
-        PRIV_MIN_SWAP_INTERVAL = 0,
-        PRIV_MAX_SWAP_INTERVAL = 1,
+        PRIV_USAGE_LOCKED_FOR_POST = 0x80000000
     };
 };
 
