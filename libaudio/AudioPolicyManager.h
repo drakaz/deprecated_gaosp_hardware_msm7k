@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+// modified by musty for I7500
 
 #include <stdint.h>
 #include <sys/types.h>
@@ -196,6 +197,7 @@ private:
         String8 mA2dpDeviceAddress;                                         // A2DP device MAC address
         String8 mScoDeviceAddress;                                          // SCO device MAC address
         nsecs_t mMusicStopTime;                                             // time when last music stream was stopped
+        bool    mLimitRingtoneVolume;                                       // limit ringtone volume to music volume if headset connected
 };
 
 };
