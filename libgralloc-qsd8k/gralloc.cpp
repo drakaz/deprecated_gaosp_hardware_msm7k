@@ -191,7 +191,7 @@ static int init_pmem_area_locked(private_module_t* m)
         pmem_region region;
         if (ioctl(master_fd, PMEM_GET_TOTAL_SIZE, &region) < 0) {
             LOGE("PMEM_GET_TOTAL_SIZE failed, limp mode");
-            size = 8<<20;   // 8 MiB
+            size = 19<<20;   // 19 MiB
         } else {
             size = region.len;
         }
