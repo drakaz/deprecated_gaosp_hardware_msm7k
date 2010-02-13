@@ -95,7 +95,8 @@ AudioHardware::AudioHardware() :
     mA1026Init(false), mInit(false), mMicMute(true),
     mBluetoothNrec(true), mBluetoothIdTx(0),
     mBluetoothIdRx(0), mOutput(0),
-    mNoiseSuppressionState(A1026_NS_STATE_AUTO)
+    mNoiseSuppressionState(A1026_NS_STATE_AUTO),
+    mVoiceVolume(VOICE_VOLUME_MAX)
 {
     int (*snd_get_num)();
     int (*snd_get_bt_endpoint)(msm_bt_endpoint *);
@@ -508,20 +509,19 @@ status_t AudioHardware::setVoiceVolume(float v)
         v = 1.0;
     }
 
-    int vol = lrint(v * 5.0);
+    int vol = lrint(v * VOICE_VOLUME_MAX);
     LOGD("setVoiceVolume(%f)\n", v);
-    LOGI("Setting in-call volume to %d (available range is 0 to 5)\n", vol);
+    LOGI("Setting in-call volume to %d (available range is 0 to %d)\n", vol, VOICE_VOLUME_MAX);
 
     Mutex::Autolock lock(mLock);
     set_volume_rpc(vol); //always set current device
+    mVoiceVolume = vol;
     return NO_ERROR;
 }
 
 status_t AudioHardware::setMasterVolume(float v)
 {
-    Mutex::Autolock lock(mLock);
-    int vol = ceil(v * 5.0);
-    LOGI("Set master volume to %d.\n", vol);
+    LOGI("Set master volume to %f.\n", v);
     // We return an error code here to let the audioflinger do in-software
     // volume on top of the maximum volume that we set through the SND API.
     // return error - software mixer will handle it
@@ -584,6 +584,10 @@ static status_t do_route_audio_dev_ctrl(uint32_t device, bool inCall, uint32_t r
            out_device = FM_SPKR;
            mic_device = HEADSET_MIC;
            LOGD("Stereo FM speaker");
+    } else if (device == SND_DEVICE_CARKIT) {
+           out_device = BT_SCO_SPKR;
+           mic_device = BT_SCO_MIC;
+           LOGD("Carkit");
     } else {
            LOGE("unknown device %d", device);
            return -1;
@@ -686,7 +690,9 @@ status_t AudioHardware::doAudioRouteOrMute(uint32_t device)
     }
 
     if (mMode == AudioSystem::MODE_IN_CALL && mBluetoothIdTx != 0
-            && device == (int) SND_DEVICE_BT) {
+            && (device == (int) SND_DEVICE_BT ||
+                device == (int) SND_DEVICE_BT_EC_OFF ||
+                device == (int) SND_DEVICE_CARKIT)) {
         rx_acdb_id = mBluetoothIdRx;
         tx_acdb_id = mBluetoothIdTx;
     } else {
@@ -924,6 +930,7 @@ status_t AudioHardware::doAudience_A1026_Control(int Mode, bool Record, uint32_t
 	            break;
 	        case SND_DEVICE_BT:
 	        case SND_DEVICE_BT_EC_OFF:
+	        case SND_DEVICE_CARKIT:
 	            new_pathid = A1026_PATH_INCALL_BT;
 	            LOGV("A1026 control: new path is A1026_PATH_INCALL_BT");
 	            break;
@@ -955,6 +962,7 @@ status_t AudioHardware::doAudience_A1026_Control(int Mode, bool Record, uint32_t
 	            break;
 	        case SND_DEVICE_BT:
 	        case SND_DEVICE_BT_EC_OFF:
+	        case SND_DEVICE_CARKIT:
 	            new_pathid = A1026_PATH_INCALL_BT; /* QCOM NS, BT MIC */
 	            LOGV("A1026 control: new path is A1026_PATH_INCALL_BT");
 	            break;
@@ -1007,6 +1015,7 @@ status_t AudioHardware::doAudience_A1026_Control(int Mode, bool Record, uint32_t
 	        break;
         case SND_DEVICE_BT:
         case SND_DEVICE_BT_EC_OFF:
+        case SND_DEVICE_CARKIT:
 	        if (vr_mode_enabled) {
 	            if (vr_uses_ns) {
 	                new_pathid = A1026_PATH_VR_NS_BT;
@@ -1074,6 +1083,9 @@ status_t AudioHardware::doRouting(AudioStreamInMSM72xx *input)
             if (inputDevice & AudioSystem::DEVICE_IN_BLUETOOTH_SCO_HEADSET) {
                 LOGI("Routing audio to Bluetooth PCM\n");
                 sndDevice = SND_DEVICE_BT;
+            } else if (inputDevice & AudioSystem::DEVICE_OUT_BLUETOOTH_SCO_CARKIT) {
+               LOGI("Routing audio to Bluetooth car kit\n");
+               sndDevice = SND_DEVICE_CARKIT;
             } else if (inputDevice & AudioSystem::DEVICE_IN_WIRED_HEADSET) {
                 if ((outputDevices & AudioSystem::DEVICE_OUT_WIRED_HEADSET) &&
                         (outputDevices & AudioSystem::DEVICE_OUT_SPEAKER)) {
@@ -1156,6 +1168,9 @@ status_t AudioHardware::doRouting(AudioStreamInMSM72xx *input)
     if ((vr_mode_change) || (sndDevice != -1 && sndDevice != mCurSndDevice)) {
         ret = doAudioRouteOrMute(sndDevice);
         mCurSndDevice = sndDevice;
+        if (mMode == AudioSystem::MODE_IN_CALL) {
+            set_volume_rpc(mVoiceVolume);
+        }
     }
 
     return ret;
