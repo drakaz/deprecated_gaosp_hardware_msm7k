@@ -672,7 +672,7 @@ static status_t do_route_audio_dev_ctrl(uint32_t device, bool inCall, uint32_t r
         LOGD("TTY FULL headset");
     } else if (device == SND_DEVICE_TTY_VCO) {
         out_device = TTY_HEADSET_SPKR;
-        mic_device = HANDSET_MIC;
+        mic_device = SPKR_PHONE_MIC;
         LOGD("TTY VCO headset");
     } else if (device == SND_DEVICE_TTY_HCO) {
         out_device = SPKR_PHONE_MONO;
@@ -733,21 +733,12 @@ Incall:
                 return -1;
             }
         }
-        if (rx_acdb_id == ACDB_ID_HAC_HANDSET_SPKR &&
-            tx_acdb_id == ACDB_ID_HAC_HANDSET_MIC) {
-            path[0] = rx_acdb_id;
-            path[1] = tx_acdb_id;
-            if (ioctl(fd, AUDIO_START_VOICE, &path)) {
-                LOGE("Cannot start voice");
-                close(fd);
-                return -1;
-            }
-        } else {
-            if (ioctl(fd, AUDIO_START_VOICE, NULL)) {
-                LOGE("Cannot start voice");
-                close(fd);
-                return -1;
-            }
+        path[0] = rx_acdb_id;
+        path[1] = tx_acdb_id;
+        if (ioctl(fd, AUDIO_START_VOICE, &path)) {
+            LOGE("Cannot start voice");
+            close(fd);
+            return -1;
         }
         LOGD("Voice Started!!");
         voice_started = 1;
