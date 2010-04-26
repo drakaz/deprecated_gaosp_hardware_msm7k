@@ -1,3 +1,4 @@
+ifeq ($(BUILD_OLD_CAMERA_HACK),true)
 BUILD_LIBCAMERA:= true
 ifeq ($(BUILD_LIBCAMERA),true)
 
@@ -33,3 +34,4 @@ include $(BUILD_SHARED_LIBRARY)
 
 endif # BUILD_TINY_ANDROID
 endif # BUILD_LIBCAMERA
+endif # BUILD_OLD_CAMERA_HACK
