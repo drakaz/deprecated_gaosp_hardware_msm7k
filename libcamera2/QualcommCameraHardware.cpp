@@ -776,8 +776,6 @@ bool QualcommCameraHardware::initPreview()
 
     int cnt = 0;
     mPreviewFrameSize = mPreviewWidth * mPreviewHeight * 3/2;
-    /* round-up to page size alignment */
-    mPreviewFrameSize = (mPreviewFrameSize + (PAGE_SIZE-1)) & (~(PAGE_SIZE-1));
     mPreviewHeap = new PmemPool("/dev/pmem_adsp",
                                 mCameraControlFd,
                                 MSM_PMEM_OUTPUT2,
@@ -1852,8 +1850,8 @@ static bool register_buf(int camfd,
     pmemBuf.cbcr_off = size * 2 / 3; //PAD_TO_WORD(size * 2 / 3);
     pmemBuf.active   = true;
 
-    LOGV("register_buf: camfd = %d, reg = %d buffer = %p offset = %d size = %d",
-         camfd, !register_buffer, buf, offset, size);
+    LOGV("register_buf: camfd = %d, reg = %d buffer = %p",
+         camfd, !register_buffer, buf);
     if (ioctl(camfd,
               register_buffer ?
               MSM_CAM_IOCTL_REGISTER_PMEM :
