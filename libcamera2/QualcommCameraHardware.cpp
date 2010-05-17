@@ -78,11 +78,13 @@ bool  (*LINK_jpeg_encoder_encode)(const cam_ctrl_dimension_t *dimen,
                                   const uint8_t *thumbnailbuf, int thumbnailfd,
                                   const uint8_t *snapshotbuf, int snapshotfd,
                                   common_crop_t *scaling_parms);
-int  (*LINK_camframe_terminate)(void);
+void  (*LINK_camframe_terminate)(void);
 int8_t (*LINK_jpeg_encoder_setMainImageQuality)(uint32_t quality);
 int8_t (*LINK_jpeg_encoder_setThumbnailQuality)(uint32_t quality);
 int8_t (*LINK_jpeg_encoder_setRotation)(uint32_t rotation);
 int8_t (*LINK_jpeg_encoder_setLocation)(const camera_position_type *location);
+int (*LINK_launch_cam_conf_thread)(void);
+int (*LINK_release_cam_conf_thread)(void);
 // callbacks
 void  (**LINK_mmcamera_camframe_callback)(struct msm_frame *frame);
 void  (**LINK_mmcamera_jpegfragment_callback)(uint8_t *buff_ptr,
@@ -100,6 +102,8 @@ void  (**LINK_mmcamera_shutter_callback)();
 #define LINK_jpeg_encoder_setThumbnailQuality jpeg_encoder_setThumbnailQuality
 #define LINK_jpeg_encoder_setRotation jpeg_encoder_setRotation
 #define LINK_jpeg_encoder_setLocation jpeg_encoder_setLocation
+#define LINK_launch_cam_conf_thread launch_cam_conf_thread
+#define LINK_release_cam_conf_thread release_cam_conf_thread
 extern void (*mmcamera_camframe_callback)(struct msm_frame *frame);
 extern void (*mmcamera_jpegfragment_callback)(uint8_t *buff_ptr,
                                       uint32_t buff_size);
@@ -212,6 +216,14 @@ static void receive_jpeg_fragment_callback(uint8_t *buff_ptr, uint32_t buff_size
 static void receive_jpeg_callback(jpeg_event_t status);
 static void receive_shutter_callback();
 
+static int camerafd;
+pthread_t w_thread;
+
+void *opencamerafd(void *data) {
+    camerafd = open(MSM_CAMERA_CONTROL, O_RDWR);
+    return NULL;
+}
+
 QualcommCameraHardware::QualcommCameraHardware()
     : mParameters(),
       mPreviewHeight(-1),
@@ -236,6 +248,15 @@ QualcommCameraHardware::QualcommCameraHardware()
       mInPreviewCallback(false),
       mCameraRecording(false)
 {
+
+    // Start opening camera device in a separate thread/ Since this
+    // initializes the sensor hardware, this can take a long time. So,
+    // start the process here so it will be ready by the time it's
+    // needed.
+    if ((pthread_create(&w_thread, NULL, opencamerafd, NULL)) != 0) {
+        LOGE("Camera open thread creation failed");
+    }
+
     memset(&mDimension, 0, sizeof(mDimension));
     memset(&mCrop, 0, sizeof(mCrop));
     LOGV("constructor EX");
@@ -321,7 +342,7 @@ bool QualcommCameraHardware::msgTypeEnabled(int32_t msgType)
 
 #define ROUND_TO_PAGE(x)  (((x)+0xfff)&~0xfff)
 
-void QualcommCameraHardware::startCamera()
+bool QualcommCameraHardware::startCamera()
 {
     LOGV("startCamera E");
 #if DLOPEN_LIBMMCAMERA
@@ -329,7 +350,7 @@ void QualcommCameraHardware::startCamera()
     LOGV("loading libqcamera at %p", libmmcamera);
     if (!libmmcamera) {
         LOGE("FATAL ERROR: could not dlopen libqcamera.so: %s", dlerror());
-        return;
+        return false;
     }
 
     *(void **)&LINK_cam_frame =
@@ -380,6 +401,13 @@ void QualcommCameraHardware::startCamera()
 
     *(void **)&LINK_cam_conf =
         ::dlsym(libmmcamera, "cam_conf");
+
+    *(void **)&LINK_launch_cam_conf_thread =
+        ::dlsym(libmmcamera, "launch_cam_conf_thread");
+
+    *(void **)&LINK_release_cam_conf_thread =
+        ::dlsym(libmmcamera, "release_cam_conf_thread");
+
 #else
     mmcamera_camframe_callback = receive_camframe_callback;
     mmcamera_jpegfragment_callback = receive_jpeg_fragment_callback;
@@ -388,18 +416,29 @@ void QualcommCameraHardware::startCamera()
 #endif // DLOPEN_LIBMMCAMERA
 
     /* The control thread is in libcamera itself. */
-    mCameraControlFd = open(MSM_CAMERA_CONTROL, O_RDWR);
+    if (pthread_join(w_thread, NULL) != 0) {
+        LOGE("Camera open thread exit failed");
+        return false;
+    }
+    mCameraControlFd = camerafd;
+
     if (mCameraControlFd < 0) {
         LOGE("startCamera X: %s open failed: %s!",
              MSM_CAMERA_CONTROL,
              strerror(errno));
-        return;
+        return false;
     }
 
-    pthread_create(&mCamConfigThread, NULL,
-                   LINK_cam_conf, NULL);
+    /* This will block until the control thread is launched. After that, sensor
+     * information becomes available.
+     */
+    if (LINK_launch_cam_conf_thread()) {
+        LOGE("failed to launch the camera config thread");
+        return false;
+    }
 
     LOGV("startCamera X");
+    return true;
 }
 
 status_t QualcommCameraHardware::dump(int fd,
@@ -840,9 +879,7 @@ void QualcommCameraHardware::deinitPreview(void)
     // the frame-thread's callback.  This we have to make the frame thread
     // detached, and use a separate mechanism to wait for it to complete.
 
-    if (LINK_camframe_terminate() < 0)
-        LOGE("failed to stop the camframe thread: %s",
-             strerror(errno));
+    LINK_camframe_terminate();
     LOGI("deinitPreview X");
 }
 
@@ -991,12 +1028,8 @@ void QualcommCameraHardware::release()
     if (ioctl(mCameraControlFd, MSM_CAM_IOCTL_CTRL_COMMAND, &ctrlCmd) < 0)
         LOGE("ioctl CAMERA_EXIT fd %d error %s",
              mCameraControlFd, strerror(errno));
-    rc = pthread_join(mCamConfigThread, NULL);
-    if (rc)
-        LOGE("config_thread exit failure: %s", strerror(errno));
-    else
-        LOGV("pthread_join succeeded on config_thread");
 
+    LINK_release_cam_conf_thread();
     close(mCameraControlFd);
     mCameraControlFd = -1;
 
@@ -1755,6 +1788,16 @@ QualcommCameraHardware::PmemPool::PmemPool(const char *pmem_pool,
          pmem_pool, num_buffers, frame_size, frame_offset,
          buffer_size);
 
+    if( mCameraControlFd == 0 ) {
+          /* This should not happen. But if and when it
+          * happens, we should not be using fd 0 for issuing
+          * any IOCTL calls to camera driver since the
+          * behaviour is undeterministic. Hence adding a
+          * workaround to deal with this issue */
+            LOGD(" 'dup'ed FD is 0....dup again ");
+            mCameraControlFd = dup(camera_control_fd);
+        }
+
     LOGV("%s: duplicating control fd %d --> %d",
          __FUNCTION__,
          camera_control_fd, mCameraControlFd);
@@ -1849,6 +1892,11 @@ static bool register_buf(int camfd,
     pmemBuf.y_off    = 0;
     pmemBuf.cbcr_off = size * 2 / 3; //PAD_TO_WORD(size * 2 / 3);
     pmemBuf.active   = true;
+
+    if(pmem_type == MSM_PMEM_RAW_MAINIMG)
+        pmemBuf.cbcr_off = 0;
+    else
+        pmemBuf.cbcr_off = ((size * 2 / 3) + 1) & ~1;
 
     LOGV("register_buf: camfd = %d, reg = %d buffer = %p",
          camfd, !register_buffer, buf);

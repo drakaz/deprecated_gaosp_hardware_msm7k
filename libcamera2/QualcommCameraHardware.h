@@ -267,7 +267,7 @@ private:
     sp<PmemPool> mRawHeap;
     sp<AshmemPool> mJpegHeap;
 
-    void startCamera();
+    bool startCamera();
     bool initPreview();
     void deinitPreview();
     bool initRaw(bool initJpegHeap);
