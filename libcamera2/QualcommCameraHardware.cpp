@@ -1176,9 +1176,14 @@ void QualcommCameraHardware::runAutoFocus()
     close(mAutoFocusFd);
     mAutoFocusFd = -1;
     mAutoFocusThreadLock.unlock();
-
-    if (mMsgEnabled & CAMERA_MSG_FOCUS)
-        mNotifyCb(CAMERA_MSG_FOCUS, status, 0, mCallbackCookie);
+    
+    mCallbackLock.lock();
+    bool autoFocusEnabled = mMsgEnabled & CAMERA_MSG_FOCUS;
+    notify_callback cb = mNotifyCb;
+    void *data = mCallbackCookie;
+    mCallbackLock.unlock();
+    if (autoFocusEnabled)
+        cb(CAMERA_MSG_FOCUS, status, 0, data);
 
 #if DLOPEN_LIBMMCAMERA
     if (libhandle) {
@@ -1468,13 +1473,13 @@ void QualcommCameraHardware::receivePreviewFrame(struct msm_frame *frame)
         return;
     }
 
-    // Why is this here?
-    /*mCallbackLock.lock();
-    preview_callback pcb = mPreviewCallback;
-    void *pdata = mPreviewCallbackCookie;
-    recording_callback rcb = mRecordingCallback;
-    void *rdata = mRecordingCallbackCookie;
-    mCallbackLock.unlock(); */
+    mCallbackLock.lock();
+    int msgEnabled = mMsgEnabled;
+    data_callback pcb = mDataCb;
+    void *pdata = mCallbackCookie;
+    data_callback_timestamp rcb = mDataCbTimestamp;
+    void *rdata = mCallbackCookie;
+    mCallbackLock.unlock(); 
 
     // Find the offset within the heap of the current buffer.
     ssize_t offset =
@@ -1484,12 +1489,12 @@ void QualcommCameraHardware::receivePreviewFrame(struct msm_frame *frame)
     //LOGV("%d\n", offset);
 
     mInPreviewCallback = true;
-    if (mMsgEnabled & CAMERA_MSG_PREVIEW_FRAME)
-        mDataCb(CAMERA_MSG_PREVIEW_FRAME, mPreviewHeap->mBuffers[offset], mCallbackCookie);
+    if (msgEnabled & CAMERA_MSG_PREVIEW_FRAME)
+        pcb(CAMERA_MSG_PREVIEW_FRAME, mPreviewHeap->mBuffers[offset], pdata);
 
-    if (mMsgEnabled & CAMERA_MSG_VIDEO_FRAME) {
+    if (msgEnabled & CAMERA_MSG_VIDEO_FRAME) {
         Mutex::Autolock rLock(&mRecordFrameLock);
-        mDataCbTimestamp(systemTime(), CAMERA_MSG_VIDEO_FRAME, mPreviewHeap->mBuffers[offset], mCallbackCookie); /* guess? */
+        rcb(systemTime(), CAMERA_MSG_VIDEO_FRAME, mPreviewHeap->mBuffers[offset], rdata); /* guess? */
         //mDataCb(CAMERA_MSG_VIDEO_FRAME, mPreviewHeap->mBuffers[offset], mCallbackCookie);
 
         if (mReleasedRecordingFrame != true) {
@@ -1499,15 +1504,15 @@ void QualcommCameraHardware::receivePreviewFrame(struct msm_frame *frame)
         mReleasedRecordingFrame = false;
     }
 
-    /*if(mMsgEnabled & CAMERA_MSG_VIDEO_IMAGE) {
+    if(msgEnabled & CAMERA_MSG_VIDEO_FRAME) {
+        rcb(systemTime(), CAMERA_MSG_VIDEO_FRAME, mPreviewHeap->mBuffers[offset], rdata);
         Mutex::Autolock rLock(&mRecordFrameLock);
-        rcb(systemTime(), mPreviewHeap->mBuffers[offset], rdata);
         if (mReleasedRecordingFrame != true) {
             LOGV("block for release frame request/command");
             mRecordWait.wait(mRecordFrameLock);
         }
         mReleasedRecordingFrame = false;
-    }*/
+    }
     mInPreviewCallback = false;
 
 //    LOGV("receivePreviewFrame X");
@@ -1587,6 +1592,7 @@ void QualcommCameraHardware::receiveRawPicture()
 {
     LOGV("receiveRawPicture: E");
 
+    Mutex::Autolock cbLock(&mCallbackLock);
     if (mMsgEnabled & CAMERA_MSG_RAW_IMAGE) {
         if(native_get_picture(mCameraControlFd, &mCrop) == false) {
             LOGE("getPicture failed!");
@@ -1639,6 +1645,7 @@ void QualcommCameraHardware::receiveJpegPicture(void)
 {
     LOGV("receiveJpegPicture: E image (%d uint8_ts out of %d)",
          mJpegSize, mJpegHeap->mBufferSize);
+    Mutex::Autolock cbLock(&mCallbackLock);
 
     int index = 0, rc;
 
@@ -1649,7 +1656,7 @@ void QualcommCameraHardware::receiveJpegPicture(void)
         sp<MemoryBase> buffer = new
             MemoryBase(mJpegHeap->mHeap,
                        index * mJpegHeap->mBufferSize +
-                       mJpegHeap->mFrameOffset,
+                       0,
                        mJpegSize);
 
         mDataCb(CAMERA_MSG_COMPRESSED_IMAGE, buffer, mCallbackCookie);

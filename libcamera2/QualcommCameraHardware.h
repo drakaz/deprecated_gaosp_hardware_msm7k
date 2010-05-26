@@ -299,7 +299,7 @@ private:
 
     void receiveRawPicture(void);
 
-
+    Mutex mCallbackLock;
     Mutex mRecordLock;
     Mutex mRecordFrameLock;
     Condition mRecordWait;
