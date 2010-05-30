@@ -200,9 +200,10 @@ struct private_handle_t {
     int     writeOwner;
     int     gpuaddr; // The gpu address mapped into the mmu. If using ashmem, set to 0 They don't care
     int     pid;
+	int		swWrite;
 
 #ifdef __cplusplus
-    static const int sNumInts = 10;
+    static const int sNumInts = 11;
     static const int sNumFds = 1;
     static const int sMagic = 'gmsm';
 
