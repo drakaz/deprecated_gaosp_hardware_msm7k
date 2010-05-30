@@ -42,10 +42,8 @@
 
 #if defined(COPYBIT_MSM7K)
 #define MAX_SCALE_FACTOR    (4)
-#define MAX_DIMENSION       (4096)
 #elif defined(COPYBIT_QSD8K)
 #define MAX_SCALE_FACTOR    (8)
-#define MAX_DIMENSION       (2048)
 #else
 #error "Unsupported MDP version"
 #endif
@@ -139,7 +137,7 @@ static void set_image(struct mdp_img *img, const struct copybit_image_t *rhs)
     img->format     = get_format(rhs->format);
     img->offset     = hnd->offset;
 #if defined(COPYBIT_MSM7K)
-    if ((hnd->flags & private_handle_t::PRIV_FLAGS_USES_GPU)) {
+    if (hnd->flags & private_handle_t::PRIV_FLAGS_USES_GPU) {
         img->memory_id = hnd->gpu_fd;
         if (img->format == MDP_RGBA_8888) {
             // msm7201A GPU only supports BGRA_8888 destinations
@@ -368,12 +366,6 @@ static int stretch_copybit(
             return -EINVAL;
         }
 
-// musty : remove MAX_DIMENSION check
-//        if (src->w > MAX_DIMENSION || src->h > MAX_DIMENSION)
-//           return -EINVAL;
-//        if (dst->w > MAX_DIMENSION || dst->h > MAX_DIMENSION)
-//            return -EINVAL;
-
         const uint32_t maxCount = sizeof(list.req)/sizeof(list.req[0]);
         const struct copybit_rect_t bounds = { 0, 0, dst->w, dst->h };
         struct copybit_rect_t clip;
@@ -461,12 +453,11 @@ static int open_copybit(const struct hw_module_t* module, const char* name,
     } else {
         struct fb_fix_screeninfo finfo;
         if (ioctl(ctx->mFD, FBIOGET_FSCREENINFO, &finfo) == 0) {
-// musty
-             if (strncmp(finfo.id, "msmfb", 5) == 0) {
+            if (strcmp(finfo.id, "msmfb") == 0) {
                 /* Success */
                 status = 0;
             } else {
-                LOGE("Error not msm frame buffer : %s",finfo.id);
+                LOGE("Error not msm frame buffer");
                 status = -EINVAL;
             }
         } else {
