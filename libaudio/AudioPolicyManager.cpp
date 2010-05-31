@@ -1353,10 +1353,14 @@ uint32_t AudioPolicyManager::getDeviceForStrategy(routing_strategy strategy)
             device = getDeviceForStrategy(STRATEGY_PHONE);
             break;
         }
+#if 0
+	// http://code.google.com/p/android/issues/detail?id=5012
+	// http://code.google.com/p/cyanogenmod/issues/detail?id=1229
         device = mAvailableOutputDevices & AudioSystem::DEVICE_OUT_SPEAKER;
         if (device == 0) {
             LOGE("getDeviceForStrategy() speaker device not found");
         }
+#endif
         // The second device used for sonification is the same as the device used by media strategy
         // FALL THROUGH
 
