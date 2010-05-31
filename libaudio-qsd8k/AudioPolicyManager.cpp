@@ -1780,10 +1780,14 @@ uint32_t AudioPolicyManager::getDeviceForStrategy(routing_strategy strategy)
         // - if we are docked to a BT CAR dock, don't duplicate for the sonification strategy
         // - if we are docked to a BT DESK dock, use only speaker for the sonification strategy
         if (mForceUse[AudioSystem::FOR_DOCK] != AudioSystem::FORCE_BT_CAR_DOCK) {
+#if 0
+            // http://code.google.com/p/android/issues/detail?id=5012
+            // http://code.google.com/p/cyanogenmod/issues/detail?id=1229
             device = mAvailableOutputDevices & AudioSystem::DEVICE_OUT_SPEAKER;
             if (device == 0) {
                 LOGE("getDeviceForStrategy() speaker device not found");
             }
+#endif
             if (mForceUse[AudioSystem::FOR_DOCK] == AudioSystem::FORCE_BT_DESK_DOCK) {
                 if (mAvailableOutputDevices & AudioSystem::DEVICE_OUT_WIRED_HEADPHONE) {
                     device |= AudioSystem::DEVICE_OUT_WIRED_HEADPHONE;
