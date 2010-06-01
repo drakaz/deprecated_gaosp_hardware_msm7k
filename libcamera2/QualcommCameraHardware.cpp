@@ -189,6 +189,9 @@ static char *effect_values;
 // from qcamera/common/camera.h
 static const str_map antibanding[] = {
     { "off",  CAMERA_ANTIBANDING_OFF },
+    { "50hz", CAMERA_ANTIBANDING_50HZ },
+    { "60hz", CAMERA_ANTIBANDING_60HZ },
+    { "auto", CAMERA_ANTIBANDING_AUTO },
     { NULL, 0 }
 };
 static char *antibanding_values;
@@ -280,7 +283,7 @@ void QualcommCameraHardware::initDefaultParameters()
     p.set("jpeg-thumbnail-quality", "90");
 
     p.setPictureSize(DEFAULT_PICTURE_WIDTH, DEFAULT_PICTURE_HEIGHT);
-    p.set("antibanding", "off");
+    p.set("antibanding", "auto");
     p.set("effect", "none");
     p.set("whitebalance", "auto");
 
