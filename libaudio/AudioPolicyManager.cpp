@@ -17,6 +17,7 @@
 #define LOG_TAG "AudioPolicyManager"
 //#define LOG_NDEBUG 0
 #include <utils/Log.h>
+#include <cutils/properties.h>
 #include "AudioPolicyManager.h"
 #include <media/mediarecorder.h>
 
@@ -1345,7 +1346,7 @@ uint32_t AudioPolicyManager::getDeviceForStrategy(routing_strategy strategy)
         }
     break;
 
-    case STRATEGY_SONIFICATION:
+    case STRATEGY_SONIFICATION: {
 
         // If incall, just select the STRATEGY_PHONE device: The rest of the behavior is handled by
         // handleIncallSonification().
@@ -1353,16 +1354,23 @@ uint32_t AudioPolicyManager::getDeviceForStrategy(routing_strategy strategy)
             device = getDeviceForStrategy(STRATEGY_PHONE);
             break;
         }
-#if 0
-	// http://code.google.com/p/android/issues/detail?id=5012
-	// http://code.google.com/p/cyanogenmod/issues/detail?id=1229
-        device = mAvailableOutputDevices & AudioSystem::DEVICE_OUT_SPEAKER;
-        if (device == 0) {
-            LOGE("getDeviceForStrategy() speaker device not found");
-        }
-#endif
+
+	int send_to_speaker = 0;
+	char value[PROPERTY_VALUE_MAX];
+	property_get("persist.sys.speaker-notif", value, "1");
+	send_to_speaker = atoi(value);
+
+	if (send_to_speaker) {
+	    // http://code.google.com/p/android/issues/detail?id=5012
+	    // http://code.google.com/p/cyanogenmod/issues/detail?id=1229
+	    device = mAvailableOutputDevices & AudioSystem::DEVICE_OUT_SPEAKER;
+	    if (device == 0) {
+		LOGE("getDeviceForStrategy() speaker device not found");
+	    }
+	}
         // The second device used for sonification is the same as the device used by media strategy
         // FALL THROUGH
+    }
 
     case STRATEGY_MEDIA: {
         uint32_t device2 = mAvailableOutputDevices & AudioSystem::DEVICE_OUT_AUX_DIGITAL;
