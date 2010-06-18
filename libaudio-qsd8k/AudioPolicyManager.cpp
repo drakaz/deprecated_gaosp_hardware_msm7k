@@ -19,6 +19,7 @@
 #include <utils/Log.h>
 #include "AudioPolicyManager.h"
 #include <media/mediarecorder.h>
+#include <cutils/properties.h>
 
 namespace android {
 
