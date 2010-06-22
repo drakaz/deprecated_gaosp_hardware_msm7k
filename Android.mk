@@ -18,14 +18,11 @@ common_msm_dirs := libcopybit liblights librpc
 msm7k_dirs := $(common_msm_dirs) boot libgralloc libaudio libcamera2
 qsd8k_dirs := $(common_msm_dirs) libgralloc-qsd8k libaudio-qsd8k
 
-ifeq ($(TARGET_BOARD_PLATFORM),I7500)
+ifeq ($(TARGET_BOARD_PLATFORM),msm7k)
   include $(call all-named-subdir-makefiles,$(msm7k_dirs))
 else
-  ifeq ($(TARGET_BOARD_PLATFORM),msm7k)
-    include $(call all-named-subdir-makefiles,$(msm7k_dirs))
-  else
-    ifeq ($(TARGET_BOARD_PLATFORM),qsd8k)
-       include $(call all-named-subdir-makefiles,$(qsd8k_dirs))
-    endif 
-  endif
+  ifeq ($(TARGET_BOARD_PLATFORM),qsd8k)
+     include $(call all-named-subdir-makefiles,$(qsd8k_dirs))
+  endif 
 endif
+
