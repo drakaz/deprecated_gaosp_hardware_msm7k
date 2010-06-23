@@ -19,6 +19,7 @@
 #include <utils/Log.h>
 #include "AudioPolicyManager.h"
 #include <media/mediarecorder.h>
+#include <cutils/properties.h>
 
 namespace android {
 
@@ -934,6 +935,7 @@ void AudioPolicyManager::setForceUse(AudioSystem::force_use usage, AudioSystem::
         if (config != AudioSystem::FORCE_NONE && config != AudioSystem::FORCE_BT_CAR_DOCK &&
             config != AudioSystem::FORCE_BT_DESK_DOCK && config != AudioSystem::FORCE_WIRED_ACCESSORY) {
             LOGW("setForceUse() invalid config %d for FOR_DOCK", config);
+            return;
         }
         uint32_t oldPhoneDevice = getDeviceForStrategy(STRATEGY_PHONE);
         uint32_t oldSonificationDevice = getDeviceForStrategy(STRATEGY_SONIFICATION);
@@ -1779,10 +1781,18 @@ uint32_t AudioPolicyManager::getDeviceForStrategy(routing_strategy strategy)
         // - if we are docked to a BT CAR dock, don't duplicate for the sonification strategy
         // - if we are docked to a BT DESK dock, use only speaker for the sonification strategy
         if (mForceUse[AudioSystem::FOR_DOCK] != AudioSystem::FORCE_BT_CAR_DOCK) {
-            device = mAvailableOutputDevices & AudioSystem::DEVICE_OUT_SPEAKER;
-            if (device == 0) {
-                LOGE("getDeviceForStrategy() speaker device not found");
+            int send_to_speaker = 0;
+            char value[PROPERTY_VALUE_MAX];
+            property_get("persist.sys.speaker-notif", value, "1");
+            send_to_speaker = atoi(value);
+
+            if (send_to_speaker) {
+                device = mAvailableOutputDevices & AudioSystem::DEVICE_OUT_SPEAKER;
+                if (device == 0) {
+                    LOGE("getDeviceForStrategy() speaker device not found");
+                }
             }
+
             if (mForceUse[AudioSystem::FOR_DOCK] == AudioSystem::FORCE_BT_DESK_DOCK) {
                 if (mAvailableOutputDevices & AudioSystem::DEVICE_OUT_WIRED_HEADPHONE) {
                     device |= AudioSystem::DEVICE_OUT_WIRED_HEADPHONE;

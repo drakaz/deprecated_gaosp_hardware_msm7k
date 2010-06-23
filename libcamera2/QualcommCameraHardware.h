@@ -267,7 +267,7 @@ private:
     sp<PmemPool> mRawHeap;
     sp<AshmemPool> mJpegHeap;
 
-    void startCamera();
+    bool startCamera();
     bool initPreview();
     void deinitPreview();
     bool initRaw(bool initJpegHeap);
@@ -299,7 +299,7 @@ private:
 
     void receiveRawPicture(void);
 
-
+    Mutex mCallbackLock;
     Mutex mRecordLock;
     Mutex mRecordFrameLock;
     Condition mRecordWait;

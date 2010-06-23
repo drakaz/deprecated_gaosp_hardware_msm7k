@@ -33,6 +33,8 @@
 
 #include "gralloc_priv.h"
 
+#include <sys/ioctl.h>
+#include <linux/android_pmem.h>
 
 // we need this for now because pmem cannot mmap at an offset
 #define PMEM_HACK   1
@@ -232,6 +234,15 @@ int gralloc_lock(gralloc_module_t const* module,
         hnd->writeOwner = gettid();
     }
 
+    // If this is a sw write and is not a framebuffer, flag it for flushing at unlock
+    if ( (usage & GRALLOC_USAGE_SW_WRITE_MASK) &&
+             !(hnd->flags & private_handle_t::PRIV_FLAGS_FRAMEBUFFER)) {
+        hnd->swWrite = 1;
+    }
+    else {
+        hnd->swWrite = 0;
+    }
+
     if (usage & (GRALLOC_USAGE_SW_READ_MASK | GRALLOC_USAGE_SW_WRITE_MASK)) {
         if (!(current_value & private_handle_t::LOCK_STATE_MAPPED)) {
             // we need to map for real
@@ -282,6 +293,12 @@ int gralloc_unlock(gralloc_module_t const* module,
 
     } while (android_atomic_cmpxchg(current_value, new_value, 
             (volatile int32_t*)&hnd->lockState));
+
+    // If this was locked for a software write, send an ioctl to flush the cache
+    if ( hnd->swWrite == 1) {
+        struct pmem_region sub = { hnd->offset, hnd->size };
+        ioctl( hnd->fd, PMEM_CACHE_FLUSH,  &sub);
+    }
 
     return 0;
 }
