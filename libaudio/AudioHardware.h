@@ -248,6 +248,7 @@ private:
             int SND_DEVICE_SPEAKER;
 	    int SND_DEVICE_SPEAKER_MIDI;
             int SND_DEVICE_HEADSET;
+	    int SND_DEVICE_HEADSET_INCALL;
             int SND_DEVICE_BT;
             int SND_DEVICE_CARKIT;
             int SND_DEVICE_TTY_FULL;
@@ -265,3 +266,4 @@ private:
 }; // namespace android
 
 #endif // ANDROID_AUDIO_HARDWARE_MSM72XX_H
+
