@@ -33,11 +33,6 @@ LOCAL_ARM_MODE := arm
 LOCAL_C_INCLUDES := \
     $(PV_INCLUDES)
 
-# Include Qualcomm codec
-ifeq ($(TARGET_PRODUCT),dream)
-LOCAL_SHARED_LIBRARIES := libOmxCore
-endif
-
 -include $(PV_TOP)/Android_platform_extras.mk
 
 -include $(PV_TOP)/Android_system_extras.mk
