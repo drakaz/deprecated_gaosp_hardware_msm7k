@@ -21,7 +21,7 @@ LOCAL_C_INCLUDES+= \
 	vendor/qcom/proprietary/mm-camera/jpeg \
 	vendor/qcom/proprietary/mm-camera/jpeg/inc
 
-LOCAL_SHARED_LIBRARIES:= libbinder libutils libui liblog
+LOCAL_SHARED_LIBRARIES:= libbinder libutils libcamera_client liblog
 
 ifneq ($(DLOPEN_LIBMMCAMERA),1)
 LOCAL_SHARED_LIBRARIES+= libqcamera
