@@ -325,10 +325,10 @@ void QualcommCameraHardware::startCamera()
 {
     LOGV("startCamera E");
 #if DLOPEN_LIBMMCAMERA
-    libmmcamera = ::dlopen("libqcamera.so", RTLD_NOW);
-    LOGV("loading libqcamera at %p", libmmcamera);
+    libmmcamera = ::dlopen("liboemcamera.so", RTLD_NOW);
+    LOGV("loading liboemcamera at %p", libmmcamera);
     if (!libmmcamera) {
-        LOGE("FATAL ERROR: could not dlopen libqcamera.so: %s", dlerror());
+        LOGE("FATAL ERROR: could not dlopen liboemcamera.so: %s", dlerror());
         return;
     }
 
@@ -708,14 +708,14 @@ void QualcommCameraHardware::runFrameThread(void *data)
     int cnt;
 
 #if DLOPEN_LIBMMCAMERA
-    // We need to maintain a reference to libqcamera.so for the duration of the
+    // We need to maintain a reference to liboemcamera.so for the duration of the
     // frame thread, because we do not know when it will exit relative to the
-    // lifetime of this object.  We do not want to dlclose() libqcamera while
+    // lifetime of this object.  We do not want to dlclose() liboemcamera while
     // LINK_cam_frame is still running.
-    void *libhandle = ::dlopen("libqcamera.so", RTLD_NOW);
-    LOGV("FRAME: loading libqcamera at %p", libhandle);
+    void *libhandle = ::dlopen("liboemcamera.so", RTLD_NOW);
+    LOGV("FRAME: loading liboemcamera at %p", libhandle);
     if (!libhandle) {
-        LOGE("FATAL ERROR: could not dlopen libqcamera.so: %s", dlerror());
+        LOGE("FATAL ERROR: could not dlopen liboemcamera.so: %s", dlerror());
     }
     if (libhandle)
 #endif
@@ -728,7 +728,7 @@ void QualcommCameraHardware::runFrameThread(void *data)
 #if DLOPEN_LIBMMCAMERA
     if (libhandle) {
         ::dlclose(libhandle);
-        LOGV("FRAME: dlclose(libqcamera)");
+        LOGV("FRAME: dlclose(liboemcamera)");
     }
 #endif
 
@@ -965,7 +965,7 @@ void QualcommCameraHardware::release()
         return;
     }
 #else
-#warning "Cannot detect multiple release when not dlopen()ing libqcamera!"
+#warning "Cannot detect multiple release when not dlopen()ing liboemcamera!"
 #endif
 
     int cnt, rc;
@@ -1003,7 +1003,7 @@ void QualcommCameraHardware::release()
 #if DLOPEN_LIBMMCAMERA
     if (libmmcamera) {
         ::dlclose(libmmcamera);
-        LOGV("dlclose(libqcamera)");
+        LOGV("dlclose(liboemcamera)");
         libmmcamera = NULL;
     }
 #endif
@@ -1119,14 +1119,14 @@ void QualcommCameraHardware::runAutoFocus()
     }
 
 #if DLOPEN_LIBMMCAMERA
-    // We need to maintain a reference to libqcamera.so for the duration of the
+    // We need to maintain a reference to liboemcamera.so for the duration of the
     // AF thread, because we do not know when it will exit relative to the
-    // lifetime of this object.  We do not want to dlclose() libqcamera while
+    // lifetime of this object.  We do not want to dlclose() liboemcamera while
     // LINK_cam_frame is still running.
-    void *libhandle = ::dlopen("libqcamera.so", RTLD_NOW);
-    LOGV("AF: loading libqcamera at %p", libhandle);
+    void *libhandle = ::dlopen("liboemcamera.so", RTLD_NOW);
+    LOGV("AF: loading liboemcamera at %p", libhandle);
     if (!libhandle) {
-        LOGE("FATAL ERROR: could not dlopen libqcamera.so: %s", dlerror());
+        LOGE("FATAL ERROR: could not dlopen liboemcamera.so: %s", dlerror());
         close(mAutoFocusFd);
         mAutoFocusFd = -1;
         mAutoFocusThreadRunning = false;
@@ -1150,7 +1150,7 @@ void QualcommCameraHardware::runAutoFocus()
 #if DLOPEN_LIBMMCAMERA
     if (libhandle) {
         ::dlclose(libhandle);
-        LOGV("AF: dlclose(libqcamera)");
+        LOGV("AF: dlclose(liboemcamera)");
     }
 #endif
 }
