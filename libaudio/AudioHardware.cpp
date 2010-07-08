@@ -14,6 +14,8 @@
 ** limitations under the License.
 */
 
+// musty patched libaudio for Samsung Galaxy
+
 #include <math.h>
 
 //#define LOG_NDEBUG 0
@@ -34,6 +36,10 @@
 #include "AudioHardware.h"
 #include <media/AudioRecord.h>
 
+extern "C" {
+#include "max9877.h" /* define ioctls */
+}
+
 #define LOG_SND_RPC 0  // Set to 1 to log sound RPC's
 
 namespace android {
@@ -44,25 +50,145 @@ const uint32_t AudioHardware::inputSamplingRates[] = {
 };
 // ----------------------------------------------------------------------------
 
+static int do_filter_rpc(uint32_t filter, void *args) {
+    int fd;
+    fd = open("/dev/msm_pcm_ctl", O_RDWR);
+    if (fd < 0) {
+        LOGE("Can not open snd device");
+        return -EPERM;
+    }
+     if (ioctl(fd, filter, args) < 0) {
+         LOGE("do_filter_rpc error filter:%d", filter);
+         close(fd);
+         return -EIO;
+     }
+     close(fd);
+     return NO_ERROR;
+
+}
+
+static int do_audpp_enable_rpc(uint16_t flags) {
+    int fd;
+    fd = open("/dev/msm_pcm_ctl", O_RDWR);
+    if (fd < 0) {
+        LOGE("Can not open snd device");
+        return -EPERM;
+    }
+     if (ioctl(fd, AUDIO_ENABLE_AUDPP, &flags) < 0) {
+         LOGE("do_audpp_enable_rpc error");
+         close(fd);
+         return -EIO;
+     }
+     close(fd);
+     return NO_ERROR;
+}
+
+static uint16_t _ADRC[8] = {9728,45875,262,32637,12438,32759,17238,22};
+static uint16_t _IIR[49] = {4,0,16384,24628,17292,941,3611,14425,15821,62243,54449,50698,3581,14425,15821,49700,46507,60894,12499,0,16384,65079,48250,51635,13098,
+				  12602,17754,63371,3945,47023,54054,7720,3477,52359,45148,49850,12552,45531,48995,17201,13037,2,2,2,2,0,0,0,0};
+static uint16_t _EQ[139] = {8,9612,15792,20419,35120,17259,14665,29320,16752,61078,33576,9519,15275,54189,16947,25371,36513,46803,13086,
+				  10026,17382,62792,41189,49637,10546,12668,15293,13316,45132,59943,10004,65532,16383,25812,51072,
+				  38302,9005,35400,17980,22873,53402,23776,7047,28065,1360,12483,1462,33741,7640,32697,35182,39171,14135,
+				  61078,33576,38913,15643,25371,36513,35465,13650,62792,41189,59664,11544,13316,45132,7073,8914,25812,51072,
+				  38300,9005,22873,53402,59176,8643,26830,55761,47476,3853,2,2,2,2,2,2,2,2,0,0,0,
+				  0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
+
+static status_t set_volume_rpc(uint32_t device,
+                               uint32_t method,
+                               uint32_t volume);
+
+static int max9877_flags = 0;
+static int max9877_saved_flags;
+#define MAX9877_SPEAKER		1
+#define MAX9877_HEADSET		2
+#define MAX9877_RCV		4
+#define MAX9877_SPKPHONE	8
+
+static void MAX9877_ioctl_data(int cmd, void *data) {
+	static int max_fd = -1;
+	if(max_fd == -1) {
+		max_fd = open("/dev/max9877", O_RDWR);
+		if(max_fd == -1) {
+			LOGE("-- cant open max9877\n");
+			return;
+		}
+	}
+
+	if(ioctl(max_fd, cmd, data) < 0){
+		LOGE("-- cant ioctl max9877\n");
+	}
+}
+
+static void MAX9877_ioctl(int cmd) {
+	MAX9877_ioctl_data(cmd, NULL);
+}
+
+static void MAX9877_update(int new_flags) {
+	if(new_flags == max9877_flags)
+		return;
+
+	for(int i=0; i<2; i++) {
+		if((max9877_flags&(1<<i)) != (new_flags&(1<<i))){
+			int on = new_flags&(1<<i);
+			switch(i) {
+				case 0 : MAX9877_ioctl(on ? MAX9877_SPEAKER_ON : MAX9877_SPEAKER_OFF);break;
+				case 1 : MAX9877_ioctl(on ? MAX9877_HEADSET_ON : MAX9877_HEADSET_OFF);break;
+				case 2 : MAX9877_ioctl(on ? MAX9877_RCV_ON : MAX9877_RCV_OFF);break;
+			}
+		}
+	}	
+
+	max9877_flags = new_flags;
+}
+
+static void set_batt_comp(char *state) {
+	int fd = open("/sys/class/power_supply/battery/amp_down", O_RDWR);
+	if(fd == -1) return;
+	::write(fd, state, 1);
+	close(fd);
+}
+
 AudioHardware::AudioHardware() :
     mInit(false), mMicMute(true), mBluetoothNrec(true), mBluetoothId(0),
     mOutput(0), mSndEndpoints(NULL), mCurSndDevice(-1),
-    SND_DEVICE_CURRENT(-1),
-    SND_DEVICE_HANDSET(-1),
-    SND_DEVICE_SPEAKER(-1),
-    SND_DEVICE_HEADSET(-1),
-    SND_DEVICE_BT(-1),
+    SND_DEVICE_CURRENT(28),
+    SND_DEVICE_HANDSET(0),
+    SND_DEVICE_SPEAKER(6),
+    SND_DEVICE_SPEAKER_MIDI(26),
+    SND_DEVICE_HEADSET(2),
+    SND_DEVICE_BT(12),
     SND_DEVICE_CARKIT(-1),
     SND_DEVICE_TTY_FULL(-1),
     SND_DEVICE_TTY_VCO(-1),
     SND_DEVICE_TTY_HCO(-1),
     SND_DEVICE_NO_MIC_HEADSET(-1),
     SND_DEVICE_FM_HEADSET(-1),
-    SND_DEVICE_HEADSET_AND_SPEAKER(-1),
+    SND_DEVICE_HEADSET_AND_SPEAKER(3),
     SND_DEVICE_FM_SPEAKER(-1),
     SND_DEVICE_BT_EC_OFF(-1)
 {
 
+    do_filter_rpc(AUDIO_SET_ADRC, &_ADRC);
+    do_filter_rpc(AUDIO_SET_RX_IIR, &_IIR);
+    do_filter_rpc(AUDIO_SET_EQ, &_EQ);
+
+    set_volume_rpc(SND_DEVICE_HANDSET, SND_METHOD_VOICE, 5);
+    set_volume_rpc(SND_DEVICE_SPEAKER, SND_METHOD_VOICE, 5);
+    set_volume_rpc(SND_DEVICE_BT, SND_METHOD_VOICE, 5);
+    set_volume_rpc(SND_DEVICE_HEADSET,SND_METHOD_VOICE, 5);
+
+    max9877_flags = 0xffff;
+    MAX9877_update(0);
+
+    char vol = 31;
+    MAX9877_ioctl_data(MAX9877_HPH_VOL_SET, &vol);
+    MAX9877_ioctl_data(MAX9877_SPK_VOL_SET, &vol);
+    MAX9877_ioctl(MAX9877_SPK_EAR_ON);
+		
+    mNumSndEndpoints = 0;
+    mInit = true;
+    set_batt_comp("1");
+/*
     int (*snd_get_num)();
     int (*snd_get_endpoint)(int, msm_snd_endpoint *);
     int (*set_acoustic_parameters)();
@@ -72,7 +198,7 @@ AudioHardware::AudioHardware() :
     acoustic = ::dlopen("/system/lib/libhtc_acoustic.so", RTLD_NOW);
     if (acoustic == NULL ) {
         LOGE("Could not open libhtc_acoustic.so");
-        /* this is not really an error on non-htc devices... */
+        // this is not really an error on non-htc devices... 
         mNumSndEndpoints = 0;
         mInit = true;
         return;
@@ -132,6 +258,7 @@ AudioHardware::AudioHardware() :
         CHECK_FOR(HEADSET_AND_SPEAKER) {}
 #undef CHECK_FOR
     }
+*/
 }
 
 AudioHardware::~AudioHardware()
@@ -267,7 +394,12 @@ status_t AudioHardware::setMicMute_nosync(bool state)
 {
     if (mMicMute != state) {
         mMicMute = state;
-        return doAudioRouteOrMute(SND_DEVICE_CURRENT);
+        status_t ret = doAudioRouteOrMute(SND_DEVICE_CURRENT);
+	if(state)
+		MAX9877_update(max9877_flags & ~MAX9877_RCV);
+	else
+		MAX9877_update(max9877_flags | MAX9877_RCV);
+	return ret;
     }
     return NO_ERROR;
 }
@@ -483,26 +615,31 @@ status_t AudioHardware::doAudioRouteOrMute(uint32_t device)
             device = SND_DEVICE_BT_EC_OFF;
         }
     }
-    LOGV("doAudioRouteOrMute() device %x, mMode %d, mMicMute %d", device, mMode, mMicMute);
-    return do_route_audio_rpc(device,
-                              mMode != AudioSystem::MODE_IN_CALL, mMicMute);
+
+    status_t ret = do_route_audio_rpc(device, 
+                              mMode != AudioSystem::MODE_IN_CALL, 
+			      mMode != AudioSystem::MODE_IN_CALL ? mMicMute : false);
+
+    char tmp[2];
+    tmp[0] = 0;
+    tmp[1] = 80;		
+    MAX9877_ioctl_data(MAX9877_I2C_IOCTL_W, tmp);
+
+    return ret;
 }
 
 status_t AudioHardware::doRouting()
 {
-    /* currently this code doesn't work without the htc libacoustic */
-    if (!acoustic)
-        return 0;
+
 
     Mutex::Autolock lock(mLock);
     uint32_t outputDevices = mOutput->devices();
     status_t ret = NO_ERROR;
-    int (*msm72xx_enable_audpp)(int);
-    msm72xx_enable_audpp = (int (*)(int))::dlsym(acoustic, "msm72xx_enable_audpp");
-    int audProcess = (ADRC_DISABLE | EQ_DISABLE | RX_IIR_DISABLE);
+    int audProcess = 0; //(ADRC_DISABLE | EQ_DISABLE | RX_IIR_DISABLE);
     AudioStreamInMSM72xx *input = getActiveInput_l();
     uint32_t inputDevice = (input == NULL) ? 0 : input->devices();
     int sndDevice = -1;
+    static int lastDevice = -1;
 
     if (inputDevice != 0) {
         LOGI("do input routing device %x\n", inputDevice);
@@ -513,17 +650,15 @@ status_t AudioHardware::doRouting()
             if ((outputDevices & AudioSystem::DEVICE_OUT_WIRED_HEADSET) &&
                 (outputDevices & AudioSystem::DEVICE_OUT_SPEAKER)) {
                 LOGI("Routing audio to Wired Headset and Speaker\n");
-                sndDevice = SND_DEVICE_HEADSET_AND_SPEAKER;
-                audProcess = (ADRC_ENABLE | EQ_ENABLE | RX_IIR_ENABLE);
+                    sndDevice = SND_DEVICE_HEADSET;
             } else {
                 LOGI("Routing audio to Wired Headset\n");
                 sndDevice = SND_DEVICE_HEADSET;
             }
         } else {
             if (outputDevices & AudioSystem::DEVICE_OUT_SPEAKER) {
-                LOGI("Routing audio to Speakerphone\n");
-                sndDevice = SND_DEVICE_SPEAKER;
-                audProcess = (ADRC_ENABLE | EQ_ENABLE | RX_IIR_ENABLE);
+                   LOGI("Routing audio to Speakerphone %s\n", mMode != AudioSystem::MODE_IN_CALL ? "normal" : "incall");
+                   sndDevice = SND_DEVICE_SPEAKER_MIDI;
             } else {
                 LOGI("Routing audio to Handset\n");
                 sndDevice = SND_DEVICE_HANDSET;
@@ -550,38 +685,67 @@ status_t AudioHardware::doRouting()
         } else if ((outputDevices & AudioSystem::DEVICE_OUT_WIRED_HEADSET) &&
                    (outputDevices & AudioSystem::DEVICE_OUT_SPEAKER)) {
             LOGI("Routing audio to Wired Headset and Speaker\n");
-            sndDevice = SND_DEVICE_HEADSET_AND_SPEAKER;
+            sndDevice = SND_DEVICE_HEADSET;
             audProcess = (ADRC_ENABLE | EQ_ENABLE | RX_IIR_ENABLE);
         } else if (outputDevices & AudioSystem::DEVICE_OUT_WIRED_HEADPHONE) {
             if (outputDevices & AudioSystem::DEVICE_OUT_SPEAKER) {
                 LOGI("Routing audio to No microphone Wired Headset and Speaker (%d,%x)\n", mMode, outputDevices);
-                sndDevice = SND_DEVICE_HEADSET_AND_SPEAKER;
-                audProcess = (ADRC_ENABLE | EQ_ENABLE | RX_IIR_ENABLE);
+                sndDevice = SND_DEVICE_HEADSET;
             } else {
                 LOGI("Routing audio to No microphone Wired Headset (%d,%x)\n", mMode, outputDevices);
                 sndDevice = SND_DEVICE_NO_MIC_HEADSET;
             }
         } else if (outputDevices & AudioSystem::DEVICE_OUT_WIRED_HEADSET) {
-            LOGI("Routing audio to Wired Headset\n");
+            LOGI("Routing audio to Wired Headset 2\n");
             sndDevice = SND_DEVICE_HEADSET;
         } else if (outputDevices & AudioSystem::DEVICE_OUT_SPEAKER) {
-            LOGI("Routing audio to Speakerphone\n");
-            sndDevice = SND_DEVICE_SPEAKER;
-            audProcess = (ADRC_ENABLE | EQ_ENABLE | RX_IIR_ENABLE);
+            LOGI("Routing audio to Speakerphone 2 %s\n",mMode != AudioSystem::MODE_IN_CALL ? "normal" : "incall");
+            sndDevice = SND_DEVICE_SPEAKER_MIDI;
         } else {
-            LOGI("Routing audio to Handset\n");
+            LOGI("Routing audio to Handset 2\n");
             sndDevice = SND_DEVICE_HANDSET;
         }
     }
 
     if (sndDevice != -1 && sndDevice != mCurSndDevice) {
+	//MAX9877_ioctl(MAX9877_AMP_SUSPEND);
+
+	if(mMode == AudioSystem::MODE_IN_CALL && sndDevice == SND_DEVICE_SPEAKER_MIDI)
+		sndDevice = SND_DEVICE_SPEAKER;
+
         ret = doAudioRouteOrMute(sndDevice);
-        if ((*msm72xx_enable_audpp) == 0 ) {
-            LOGE("Could not open msm72xx_enable_audpp()");
-        } else {
-            msm72xx_enable_audpp(audProcess);
-        }
-        mCurSndDevice = sndDevice;
+	if(sndDevice == SND_DEVICE_SPEAKER_MIDI || sndDevice == SND_DEVICE_SPEAKER)
+	    audProcess = (ADRC_ENABLE | RX_IIR_ENABLE);
+	do_audpp_enable_rpc(audProcess);
+
+	int new_flags = 0;
+	
+        if(sndDevice == SND_DEVICE_SPEAKER_MIDI || sndDevice == SND_DEVICE_SPEAKER) {
+		if(mMode == AudioSystem::MODE_IN_CALL) {
+			max9877_flags |= MAX9877_HEADSET;
+			new_flags = max9877_flags & ~MAX9877_HEADSET;
+		} else
+			new_flags = MAX9877_SPEAKER;
+		//if(sndDevice = SND_DEVICE_SPEAKER)
+		//	new_flags |= MAX9877_SPKPHONE;
+		//if(sndDevice == SND_DEVICE_SPEAKER)
+		//	MAX9877_ioctl(MAX9877_HEADSET_OFF);
+		//if(lastDevice != SND_DEVICE_SPEAKER && lastDevice != SND_DEVICE_SPEAKER_MIDI)
+		//	MAX9877_ioctl(MAX9877_SPEAKER_ON);
+	} else if(sndDevice == SND_DEVICE_HEADSET) {
+		new_flags = MAX9877_HEADSET;
+		//MAX9877_ioctl(MAX9877_HEADSET_ON);
+	/*} else if(sndDevice == SND_DEVICE_HANDSET) {
+		new_flags = MAX9877_RCV;
+		//MAX9877_ioctl(MAX9877_RCV_ON);*/
+	}
+	if(sndDevice == SND_DEVICE_HANDSET || mMode == AudioSystem::MODE_IN_CALL || !mMicMute)
+		new_flags |= MAX9877_RCV;
+
+	MAX9877_update(new_flags);
+	//MAX9877_ioctl(MAX9877_AMP_RESUME);
+
+        lastDevice = mCurSndDevice = sndDevice;
     }
 
     return ret;
@@ -747,6 +911,7 @@ ssize_t AudioHardware::AudioStreamOutMSM72xx::write(const void* buffer, size_t b
         // fill 2 buffers before AUDIO_START
         mStartCount = AUDIO_HW_NUM_OUT_BUF;
         mStandby = false;
+	set_batt_comp("0");
     }
 
     while (count) {
@@ -786,6 +951,7 @@ status_t AudioHardware::AudioStreamOutMSM72xx::standby()
     if (!mStandby && mFd >= 0) {
         ::close(mFd);
         mFd = -1;
+	set_batt_comp("1");
     }
     mStandby = true;
     return status;
@@ -964,7 +1130,7 @@ status_t AudioHardware::AudioStreamInMSM72xx::set(
 
     //mHardware->setMicMute_nosync(false);
     mState = AUDIO_INPUT_OPENED;
-
+/*
     if (!acoustic)
         return NO_ERROR;
 
@@ -972,9 +1138,9 @@ status_t AudioHardware::AudioStreamInMSM72xx::set(
     tx_iir_index = (audpre_index * 2) + (hw->checkOutputStandby() ? 0 : 1);
     LOGD("audpre_index = %d, tx_iir_index = %d\n", audpre_index, tx_iir_index);
 
-    /**
+    /
      * If audio-preprocessing failed, we should not block record.
-     */
+     /
     int (*msm72xx_set_audpre_params)(int, int);
     msm72xx_set_audpre_params = (int (*)(int, int))::dlsym(acoustic, "msm72xx_set_audpre_params");
     status = msm72xx_set_audpre_params(audpre_index, tx_iir_index);
@@ -987,7 +1153,7 @@ status_t AudioHardware::AudioStreamInMSM72xx::set(
     status = msm72xx_enable_audpre((int)acoustic_flags, audpre_index, tx_iir_index);
     if (status < 0)
         LOGE("Cannot enable audpre");
-
+*/
     return NO_ERROR;
 
 Error:
