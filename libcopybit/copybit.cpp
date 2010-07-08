@@ -464,7 +464,7 @@ static int open_copybit(const struct hw_module_t* module, const char* name,
     } else {
         struct fb_fix_screeninfo finfo;
         if (ioctl(ctx->mFD, FBIOGET_FSCREENINFO, &finfo) == 0) {
-            if (strcmp(finfo.id, "msmfb") == 0) {
+            if (strncmp(finfo.id, "msmfb", 5) == 0) {
                 /* Success */
                 status = 0;
             } else {
