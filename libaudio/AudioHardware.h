@@ -251,6 +251,7 @@ private:
             int SND_DEVICE_CURRENT;
             int SND_DEVICE_HANDSET;
             int SND_DEVICE_SPEAKER;
+	    int SND_DEVICE_SPEAKER_MIDI;
             int SND_DEVICE_HEADSET;
             int SND_DEVICE_BT;
             int SND_DEVICE_CARKIT;
