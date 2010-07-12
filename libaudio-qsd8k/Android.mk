@@ -51,10 +51,6 @@ ifeq ($(BOARD_HAVE_BLUETOOTH),true)
   LOCAL_SHARED_LIBRARIES += liba2dp
 endif
 
-ifeq ($(BOARD_NO_PRELINK_LIBAUDIO),true)
-LOCAL_PRELINK_MODULE := false
-endif
-
 include $(BUILD_SHARED_LIBRARY)
 
 endif # not BUILD_TINY_ANDROID
