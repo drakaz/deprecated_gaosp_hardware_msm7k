@@ -39,8 +39,12 @@ LOCAL_SHARED_LIBRARIES := \
     libskia \
     libopencore_common \
     libicuuc \
-    libopencore_player \
-    libsurfaceflinger_client
+    libopencore_player
+
+ifneq ($(BOARD_USES_ECLAIR_LIBCAMERA),true)
+    LOCAL_SHARED_LIBRARIES += \
+    	libsurfaceflinger_client
+endif
 
 LOCAL_MODULE := libopencorehw
 
