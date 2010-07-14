@@ -85,6 +85,7 @@ struct SVCXPRT {
     pthread_mutexattr_t lock_attr;
     pthread_mutex_t lock;
     registered_server *servers;
+    int num_cb_servers;
     volatile int num_servers;
 };
 
@@ -125,9 +126,10 @@ static void* svc_context(void *__u)
                     /* the file descriptor points to the service instance; we
                        simply look that service by its file descriptor, and
                        call its service function. */
+                    /* FIXME: need to take xprt->lock */
                     registered_server *trav = xprt->servers;
                     for (; trav; trav = trav->next)
-                        if (trav->xdr->fd == n) {
+		      if ((trav->xdr) && (trav->xdr->fd == n)) {
                             /* read the entire RPC */
                             trav->xdr->xops->read(trav->xdr);
                             svc_dispatch(trav, xprt);
@@ -267,9 +269,14 @@ bool_t svc_register (SVCXPRT *xprt, rpcprog_t prog, rpcvers_t vers,
     svc->dispatch = dispatch;
     svc->next = xprt->servers;
     xprt->servers = svc;
-    xprt->num_servers++;
-    V("RPC server %08x:%d: after registering, there are %d servers.\n",
-      (uint32_t)prog, (int)vers, xprt->num_servers);
+    if (svc->xdr)
+        xprt->num_servers++;
+    else
+        xprt->num_cb_servers++;
+
+    V("RPC server %08x:%d: after registering,"
+      "total %d servers, %d cb servers.\n",
+      (uint32_t)prog, (int)vers, xprt->num_servers, xprt->num_cb_servers);
     svc->xprt = xprt;
     if (xprt->num_servers == 1) {
         D("creating RPC-server thread (detached)!\n");
@@ -324,13 +331,19 @@ void svc_unregister (SVCXPRT *xprt, rpcprog_t prog, rpcvers_t vers) {
         else V("RPC server %08x:%d does not have an associated XDR\n", 
                (unsigned)prog, (unsigned)vers);
 
-        free(found);
         /* When this goes to zero, the RPC-server thread will exit.  We do not
          * need to wait for the thread to exit, because it is detached.
          */
-        xprt->num_servers--;
-        V("RPC server %08x:%d: after unregistering, %d servers left.\n",
-          (unsigned)prog, (unsigned)vers, xprt->num_servers);
+        if (found->xdr)
+            xprt->num_servers--;
+        else
+            xprt->num_cb_servers--;
+
+        free(found);
+        V("RPC server %08x:%d: after unregistering,"
+	  "%d servers, %d cb servers left.\n",
+          (unsigned)prog, (unsigned)vers,
+	  xprt->num_servers, xprt->num_cb_servers);
     }
     pthread_mutex_unlock(&xprt->lock);
 }
@@ -427,8 +440,8 @@ void xprt_unregister (SVCXPRT *xprt)
     if (xprt && xprt == the_xprt) {
         if (xprt_refcount == 1) {
             xprt_refcount = 0;
-            D("Destroying RPC transport (servers %d)\n",
-              the_xprt->num_servers);
+            D("Destroying RPC transport (servers %d, cb servers %d)\n",
+              the_xprt->num_servers, the_xprt->num_cb_servers);
 
             pthread_attr_destroy(&xprt->thread_attr);
             pthread_mutexattr_destroy(&xprt->lock_attr);
