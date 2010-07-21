@@ -1639,7 +1639,7 @@ namespace android {
         /* Default Auto FPS: 30 (maximum) */
         LINK_camera_set_parm_2 (CAMERA_PARM_PREVIEW_FPS,
                                 (1<<16|20), // max frame rate 30
-                                (4<<16|20), // min frame rate 5
+                                (2<<16|20), // min frame rate 10
                                 NULL,
                                 NULL);
 #endif
