@@ -280,7 +280,7 @@ void QualcommCameraHardware::initDefaultParameters()
     p.set("effect-values", effect_values);
     p.set("whitebalance-values", whitebalance_values);
     p.set("picture-size-values", "2048x1536,1600x1200,1024x768");
-    p.set("preview-size-values", "480x320,320x240,176x144");
+    p.set("preview-size-values", "480x320,352x288,320x240,176x144");
 
     if (setParameters(p) != NO_ERROR) {
         LOGE("Failed to set default parameters?!");
