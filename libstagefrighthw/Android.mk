@@ -32,8 +32,12 @@ LOCAL_SHARED_LIBRARIES :=       \
         libutils                \
         libcutils               \
         libdl                   \
-        libui                   \
-        libsurfaceflinger_client\
+        libui
+
+ifneq ($(BOARD_USES_ECLAIR_LIBCAMERA),true)
+    LOCAL_SHARED_LIBRARIES += \
+    	libsurfaceflinger_client
+endif
 
 LOCAL_MODULE := libstagefrighthw
 
