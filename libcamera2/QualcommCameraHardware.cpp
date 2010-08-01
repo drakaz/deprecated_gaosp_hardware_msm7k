@@ -158,9 +158,9 @@ static int attr_lookup(const struct str_map *const arr, const char *name)
 static const str_map whitebalance[] = {
     { "auto",         CAMERA_WB_AUTO },
     { "incandescent", CAMERA_WB_INCANDESCENT },
-    { "florescent",   CAMERA_WB_FLUORESCENT },
+    { "fluorescent",  CAMERA_WB_FLUORESCENT },
     { "daylight",     CAMERA_WB_DAYLIGHT },
-    { "cloudy",       CAMERA_WB_CLOUDY_DAYLIGHT },
+    { "cloudy-daylight", CAMERA_WB_CLOUDY_DAYLIGHT },
     { "twilight",     CAMERA_WB_TWILIGHT },
     { "shade",        CAMERA_WB_SHADE },
     { NULL, 0 }
