@@ -21,9 +21,9 @@ qsd8k_dirs := $(common_msm_dirs) libgralloc-qsd8k libaudio-qsd8k dspcrashd
 
 ifeq ($(TARGET_BOARD_PLATFORM),msm7k)
   ifeq ($(TARGET_BOARD_PLATFORM_GPU),qcom-adreno200)
-    include $(call all-named-subdir-makefiles,$(qsd8k_dirs))
-  else
     include $(call all-named-subdir-makefiles,$(msm7k_adreno_dirs))
+  else
+    include $(call all-named-subdir-makefiles,$(msm7k_dirs))
   endif
 else
   ifeq ($(TARGET_BOARD_PLATFORM),qsd8k)
