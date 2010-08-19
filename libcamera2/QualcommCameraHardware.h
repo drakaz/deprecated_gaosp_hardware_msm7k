@@ -47,7 +47,7 @@ extern "C" {
 #define CAMERA_STOP_SNAPSHOT 42 /* guess, but likely based on previos ording */
 
 #define AF_MODE_AUTO 2
-#define CAMERA_AUTO_FOCUS_CANCEL 1 //204
+#define CAMERA_AUTO_FOCUS_CANCEL 204 //1 //204
 
 typedef enum
 {
@@ -213,6 +213,8 @@ private:
     int mPreviewWidth;
     int mRawHeight;
     int mRawWidth;
+    int mRawHeightC;
+    int mRawWidthC;
     unsigned int frame_size;
     bool mCameraRunning;
     bool mPreviewInitialized;
@@ -304,7 +306,15 @@ private:
     void deinitRaw();
     
     void setLensToBasePosition() ;
-
+    bool flashNeeded() ;
+    void startFlash() ;
+    void stopFlash() ;
+    void m4mo_write_8bit( char category, char byte, char value ) ;	    
+    char m4mo_read_8bit( char category, char byte ) ;
+    void m4mo_get_firmware_version() ;
+    friend void *jpeg_encoder_thread( void *user ) ;
+    void runJpegEncodeThread(void *data) ;
+    
     bool mFrameThreadRunning;
     Mutex mFrameThreadWaitLock;
     Condition mFrameThreadWait;
@@ -361,6 +371,8 @@ private:
 
     int mCameraControlFd;
     cam_ctrl_dimension_t mDimension;
+    cam_ctrl_dimension_t mDimensionC;
+    
     bool mAutoFocusThreadRunning;
     Mutex mAutoFocusThreadLock;
     int mAutoFocusFd;

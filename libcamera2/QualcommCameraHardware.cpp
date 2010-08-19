@@ -26,6 +26,8 @@
 #include <utils/String16.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+
+
 #include <unistd.h>
 #if HAVE_ANDROID_OS
 #include <linux/android_pmem.h>
@@ -52,8 +54,6 @@ extern "C" {
 #include <sys/mman.h>
 #include <sys/time.h>
 #include <stdlib.h>
-
-#include <media/msm_camera.h>
 
 
 #define THUMBNAIL_WIDTH        192 //512
@@ -114,6 +114,9 @@ extern void (*mmcamera_jpeg_callback)(jpeg_event_t status);
 
 } // extern "C"
 
+
+
+
 struct preview_size_type {
     int width;
     int height;
@@ -163,7 +166,7 @@ static int attr_lookup(const struct str_map *const arr, const char *name)
 static const str_map whitebalance[] = {
     { "auto",         CAMERA_WB_AUTO },
     { "incandescent", CAMERA_WB_INCANDESCENT },
-    { "florescent",   CAMERA_WB_FLUORESCENT },
+    { "fluorescent",   CAMERA_WB_FLUORESCENT },
     { "daylight",     CAMERA_WB_DAYLIGHT },
     { "cloudy",       CAMERA_WB_CLOUDY_DAYLIGHT },
     { "twilight",     CAMERA_WB_TWILIGHT },
@@ -224,6 +227,56 @@ int cam_conf_sync[2];
 
 static int camerafd;
 pthread_t w_thread;
+
+static unsigned char *hal_mmap (uint32_t size, int *pmemFd)
+         {
+           void     *ret; /* returned virtual address */
+           int    pmem_fd   = 0;
+         
+           pmem_fd = open("/dev/pmem_adsp", O_RDWR);
+         
+           if (pmem_fd < 0) {
+                 LOGI("do_mmap: Open device /dev/pmem_adsp failed!\n");
+                 return NULL;
+           }
+         
+           /* to make it page size aligned */
+           size = (size + 4095) & (~4095);
+      size=clp2(size);   
+           LOGV("do_mmap: pmem mmap size:%ld\n",size);
+        
+           ret = mmap(NULL,
+                                  size,
+                                  PROT_READ      | PROT_WRITE,
+                                  MAP_SHARED,
+                                  pmem_fd,
+                                  0);
+         
+           if (ret == MAP_FAILED) {
+                LOGI("do_mmap: pmem mmap() failed: %s (%d)\n", strerror(errno), errno); 
+                 return NULL;
+          }
+        
+           *pmemFd = pmem_fd;
+           return (unsigned char *)ret;
+         }
+         
+         static int hal_munmap (int pmem_fd, void *addr, size_t size)
+         {
+           int rc;
+         
+           size = (size + 4095) & (~4095);
+      size = clp2(size); 
+           LOGV("munmapped size = %d, virt_addr = 0x%x\n", 
+                            size, (uint32_t)addr);
+         
+           rc = (munmap(addr, size));
+         
+           close(pmem_fd);
+           pmem_fd = -1;
+         
+           return rc;
+         }
 
 void *opencamerafd(void *data) {
 	camerafd = open(MSM_CAMERA_CONTROL, O_RDWR);
@@ -453,24 +506,8 @@ LOGD("before cam_conf thread") ;
     
     
   usleep(500*1000); // use sleep value found in old qualcomm code
- 
-  // Emit m4mo ioctl found in donut log
-  ioctl_m4mo_info_8bit cmd ;
-  cmd.category = 0 ;
-  cmd.byte = 1 ;
-  
-  if ((ioctl(mCameraControlFd, MSM_CAM_IOCTL_M4MO_I2C_READ_8BIT, &cmd)) < 0)
-    LOGE("read_8bit : ioctl fd %d error %s\n",
-	  mCameraControlFd,
-	  strerror(errno));
-
-  cmd.category = 0 ;
-  cmd.byte = 2 ;
-  if ((ioctl(mCameraControlFd, MSM_CAM_IOCTL_M4MO_I2C_READ_8BIT, &cmd)) < 0)
-    LOGE("read_8bit : ioctl fd %d error %s\n",
-	  mCameraControlFd,
-	  strerror(errno));  
-
+       
+    m4mo_get_firmware_version() ;
 
     /*close(cam_conf_sync[1]);
 
@@ -692,6 +729,19 @@ static bool native_stop_snapshot (int camfd)
     return true;
 }
 
+
+void *jpeg_encoder_thread( void *user ) 
+{
+  LOGD("jpeg_encoder_thread E");
+    sp<QualcommCameraHardware> obj = QualcommCameraHardware::getInstance();
+    if (obj != 0) {
+        obj->runJpegEncodeThread(user);
+    }
+    else LOGW("not starting frame thread: the object went away!");
+    LOGD("jpeg_encoder_thread X");
+    return NULL;
+}
+
 bool QualcommCameraHardware::native_jpeg_encode(void)
 {
     int jpeg_quality = mParameters.getInt("jpeg-quality");
@@ -715,7 +765,6 @@ bool QualcommCameraHardware::native_jpeg_encode(void)
       //  }
       LOGD("jpeg thumbnail-quality done ") ;        
     }
-LOGD("avant rotation") ;
     int rotation = mParameters.getInt("rotation");
     if (rotation >= 0) {
         LOGD("native_jpeg_encode, rotation = %d", rotation);
@@ -724,23 +773,50 @@ LOGD("avant rotation") ;
 //            return false;
 //        }
     }
-LOGD("avant setLocation ") ;
     jpeg_set_location();
-LOGD("apres setLocation ") ;
     char jpegFileName[256] = {0};
     static int snapshotCntr = 0;
 
-    mDimension.picture_width  = 2560;
-    mDimension.picture_height = 1920;
+    mDimension.filler7 = 2560 ;
+    mDimension.filler8 = 1920 ;
+
     
     
-    sprintf(jpegFileName, "snapshot_%d.jpg", ++snapshotCntr);
+	  LOGD("picture_width %d, picture_height = %d, display_width = %d, display_height = %d, filler = %d, filler2 = %d, ui_thumbnail_height = %d , ui_thumbnail_width = %d, filler3 = %d, filler4 = %d, filler5 = %d, filler6 = %d, filler7 = %d, filler8 = %d\n" , 
+		 mDimension.picture_width,mDimension.picture_height,
+		 mDimension.display_width,mDimension.display_height, 
+	         mDimension.filler, mDimension.filler2, 
+		mDimension.ui_thumbnail_height, mDimension.ui_thumbnail_width, 
+	       mDimension.filler3, mDimension.filler4, mDimension.filler5, mDimension.filler6, 
+	       mDimension.filler7, mDimension.filler8 );
+    
+	       
+            pthread_attr_t attr;
+        pthread_attr_init(&attr);
+        pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+	
+	/*struct sigaction actions ;
+	memset( &actions, 0, sizeof(actions));
+	sigemptyset(&actions.sa_mask); 
+	actions.sa_flags = 0 ;
+	actions.sa_handler = exit_camframe_handler ;
+	sigaction( SIGUSR1, &actions, NULL ) ;*/
+	
+	pthread_t jpegThread ;
+	
+        int ret = !pthread_create(&jpegThread,
+                                              &attr, //NULL, 
+                                              jpeg_encoder_thread,
+                                              NULL);
+					      
+    /*sprintf(jpegFileName, "snapshot_%d.jpg", ++snapshotCntr);
     if ( !LINK_jpeg_encoder_encode(jpegFileName, &mDimension,  
                              (uint8_t *)mThumbnailHeap->mHeap->base(), mThumbnailHeap->mHeap->getHeapID(),
-			      (uint8_t *)mRawHeap->mHeap->base(), mRawHeap->mHeap->getHeapID(), &mCrop)) {
+			      (uint8_t *)mRawHeap->mHeap->base(), mRawHeap->mHeap->getHeapID(), 
+				   &mCrop)) {
        LOGV("native_jpeg_encode:%d@%s: jpeg_encoder_encode failed.\n", __LINE__, __FILE__);
      return false;
-   }
+   }*/
    
    /*
     if (!LINK_jpeg_encoder_encode(&mDimension,
@@ -874,6 +950,19 @@ void QualcommCameraHardware::runFrameThread(void *data)
     LOGD("runFrameThread X");
 }
 
+void QualcommCameraHardware::runJpegEncodeThread(void *data)
+{
+     // unsigned char *buffer ;
+      
+     // readFromMemory( (unsigned char *)mRawHeap->mHeap->base(), 2097152, buffer ) ;
+     // writeToMemory( buffer, 2560, 1920, (char *)mJpegHeap->mHeap->base(), (int *)&mJpegSize ) ;
+      
+      memcpy( mJpegHeap->mHeap->base(), mRawHeap->mHeap->base(),  2097152) ;
+      mJpegSize = 2097152 ;
+      receiveJpegPicture();
+  
+}
+
 void *frame_thread(void *user)
 {
     LOGD("frame_thread E");
@@ -885,6 +974,7 @@ void *frame_thread(void *user)
     LOGD("frame_thread X");
     return NULL;
 }
+
 
 static bool register_buf(int camfd,
                          int size,
@@ -975,8 +1065,16 @@ bool QualcommCameraHardware::initPreview()
         pthread_attr_t attr;
         pthread_attr_init(&attr);
         pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+	
+	/*struct sigaction actions ;
+	memset( &actions, 0, sizeof(actions));
+	sigemptyset(&actions.sa_mask); 
+	actions.sa_flags = 0 ;
+	actions.sa_handler = exit_camframe_handler ;
+	sigaction( SIGUSR1, &actions, NULL ) ;*/
+	
         mFrameThreadRunning = !pthread_create(&mFrameThread,
-                                              NULL, //&attr,
+                                              &attr, //NULL, 
                                               frame_thread,
                                               &frames[kPreviewBufferCount-1]);
         ret = mFrameThreadRunning;
@@ -986,6 +1084,7 @@ bool QualcommCameraHardware::initPreview()
     LOGD("initPreview X: %d", ret);
     return ret;
 }
+
 
 void QualcommCameraHardware::deinitPreview(void)
 {
@@ -1009,16 +1108,12 @@ void QualcommCameraHardware::deinitPreview(void)
  //       LOGE("failed to stop the camframe thread: %s",
 //             strerror(errno));
 
-
-
+	  
 LOGD("before camframe_terminate ")  ;
-    LINK_camframe_terminate() ;
-    if (pthread_join(mFrameThread, NULL) != 0) {
-	  LOGE("frame_thread exit failure!\n");
-    }
-    else {
-	  LOGE("frame_thread exit passed!\n");
-    }
+    int rc = LINK_camframe_terminate() ;
+  
+    LOGD("camframe terminate rc = %d", rc ) ;
+
 LOGD("Unregister buffers") ;
     for (int cnt = 0; cnt < kPreviewBufferCount; cnt++) {
 	register_buf(mCameraControlFd,
@@ -1051,6 +1146,8 @@ bool QualcommCameraHardware::initRaw(bool initJpegHeap)
     mRawSize = mRawWidth * mRawHeight * 3 / 2;
     mJpegMaxSize = mRawWidth * mRawHeight * 3 / 2;
 
+    mJpegMaxSize = 1904640 ;
+    
     if(!native_set_dimension(&mDimension)) {
         LOGE("initRaw X: failed to set dimension");
         return false;
@@ -1098,12 +1195,14 @@ bool QualcommCameraHardware::initRaw(bool initJpegHeap)
             new PmemPool("/dev/pmem_adsp",
                          mCameraControlFd,
                          MSM_PMEM_THUMBAIL,
-                         THUMBNAIL_BUFFER_SIZE,
+                         262144, //THUMBNAIL_BUFFER_SIZE,
                          1,
-                         THUMBNAIL_BUFFER_SIZE,
+                         262144, //THUMBNAIL_BUFFER_SIZE,
                          0,
                          "thumbnail");
-
+       //  thumbnail_buf = hal_mmap(THUMBNAIL_BUFFER_SIZE, 
+         //                                &pmemThumbnailfd);
+			
         if (!mThumbnailHeap->initialized()) {
             mThumbnailHeap.clear();
             mRawHeap.clear();
@@ -1133,7 +1232,7 @@ static bool register_buf(int camfd,
     if (initJpegHeap) {
         LOGD("initRaw: initializing mJpegHeap.");
         mJpegHeap =
-            new AshmemPool(mJpegMaxSize,
+            new AshmemPool(2097152,
                            kJpegBufferCount,
                            0, // we do not know how big the picture wil be
                            0,
@@ -1150,11 +1249,11 @@ static bool register_buf(int camfd,
     }
     
     register_buf( mCameraControlFd, 
-		  mJpegMaxSize,mThumbnailHeap->mHeap->getHeapID(), 0, 
+		  262144,mThumbnailHeap->mHeap->getHeapID(), 0, 
 		  (uint8_t *)mThumbnailHeap->mHeap->base(), MSM_PMEM_THUMBAIL, true, true ) ;
-		  
+//TODO why 2097152 and not mJpegMaxSize 
     register_buf( mCameraControlFd, 
-		  mJpegMaxSize,mRawHeap->mHeap->getHeapID(), 0, 
+		  2097152,mRawHeap->mHeap->getHeapID(), 0, 
 		  (uint8_t *)mRawHeap->mHeap->base(), MSM_PMEM_RAW_MAINIMG, true, true ) ;	    
     mRawInitialized = true ;
     LOGD("initRaw X");
@@ -1165,11 +1264,11 @@ void QualcommCameraHardware::deinitRaw()
 {
     LOGD("deinitRaw E");
     register_buf( mCameraControlFd, 
-		  mJpegMaxSize,mThumbnailHeap->mHeap->getHeapID(), 0, 
+		  262144,mThumbnailHeap->mHeap->getHeapID(), 0, 
 		  (uint8_t *)mThumbnailHeap->mHeap->base(), MSM_PMEM_THUMBAIL, true, false ) ;
 		  
     register_buf( mCameraControlFd, 
-		  mJpegMaxSize,mRawHeap->mHeap->getHeapID(), 0, 
+		  2097152,mRawHeap->mHeap->getHeapID(), 0, 
 		  (uint8_t *)mRawHeap->mHeap->base(), MSM_PMEM_RAW_MAINIMG, true, false ) ;	
 		  
     mThumbnailHeap.clear();
@@ -1317,16 +1416,17 @@ status_t QualcommCameraHardware::startPreview()
 }
 
 void QualcommCameraHardware::stopPreviewInternal()
-{
+{	  
     LOGD("stopPreviewInternal E: %d", mCameraRunning);
     if (mCameraRunning) {
         // Cancel auto focus.
-        if (mMsgEnabled & CAMERA_MSG_FOCUS) {
-            LOGD("canceling autofocus");
+        if (mMsgEnabled & CAMERA_MSG_FOCUS) {	  
+	  LOGD("canceling autofocus");
             cancelAutoFocus();
-        }
+	}
 
         LOGD("Stopping preview");
+	
         mCameraRunning = !native_stop_preview(mCameraControlFd);
         if (!mCameraRunning && mPreviewInitialized) {
             deinitPreview();
@@ -1403,7 +1503,7 @@ void QualcommCameraHardware::runAutoFocus()
 status_t QualcommCameraHardware::cancelAutoFocus()
 {
     LOGD("cancelAutoFocus E");
-    native_cancel_afmode(mCameraControlFd, mAutoFocusFd);
+    //native_cancel_afmode(mCameraControlFd, mAutoFocusFd);
     LOGD("cancelAutoFocus X");
 
     /* Needed for eclair camera PAI */
@@ -1465,13 +1565,55 @@ status_t QualcommCameraHardware::autoFocus()
     return NO_ERROR;
 }
 
+void QualcommCameraHardware::m4mo_write_8bit( char category, char byte, char value )
+{
+  ioctl_m4mo_info_8bit cmd ;
+  cmd.category = category ;
+  cmd.byte = byte ;
+  cmd.value = value ;
+  if ((ioctl(mCameraControlFd, MSM_CAM_IOCTL_M4MO_I2C_WRITE_8BIT, &cmd)) < 0)
+    LOGE("write_8bit : ioctl fd %d error %s\n",
+	mCameraControlFd,
+	strerror(errno));
+}
+
+void QualcommCameraHardware::m4mo_get_firmware_version()
+{
+  char minor = m4mo_read_8bit( 0x00, 0x01 ) ;
+  char major = m4mo_read_8bit( 0x00, 0x02 ) ;
+}
+
+char QualcommCameraHardware::m4mo_read_8bit( char category, char byte ) 
+{
+  ioctl_m4mo_info_8bit cmd ;
+  cmd.category = category ;
+  cmd.byte = byte ;
+  if ((ioctl(mCameraControlFd, MSM_CAM_IOCTL_M4MO_I2C_READ_8BIT, &cmd)) < 0)
+    LOGE("write_8bit : ioctl fd %d error %s\n",
+	mCameraControlFd,
+	strerror(errno));
+  return cmd.value ;
+}
+
 void QualcommCameraHardware::runSnapshotThread(void *data)
 {
     LOGD("runSnapshotThread E");
-    if (native_start_snapshot(mCameraControlFd))
+    if (native_start_snapshot(mCameraControlFd)) {
+	// guessed from logs 
+	usleep( 30000 ) ;
+	m4mo_write_8bit( 0x0C, 0x00, 0x00 ) ;
+	m4mo_write_8bit( 0x02, 0x00, 0x08 ) ;
+	m4mo_write_8bit( 0x02, 0x04, 0x06 ) ;
+	m4mo_write_8bit( 0x02, 0x25, 0x01 ) ;
+	m4mo_write_8bit( 0x00, 0x11, 0x08 ) ;
+	m4mo_write_8bit( 0x00, 0x12, 0x01 ) ;
+	m4mo_write_8bit( 0x00, 0x0b, 0x03 ) ;
+	
         receiveRawPicture();
-    else
+    }
+    else {
         LOGE("main: native_start_snapshot failed!");
+    }
 
     mSnapshotThreadWaitLock.lock();
     mSnapshotThreadRunning = false;
@@ -1511,6 +1653,10 @@ status_t QualcommCameraHardware::takePicture()
     if (!initRaw(mMsgEnabled & CAMERA_MSG_COMPRESSED_IMAGE)) { /* not sure if this is right */
         LOGE("initRaw failed.  Not taking picture.");
         return UNKNOWN_ERROR;
+    }
+    
+    if( flashNeeded() ) {
+	LOGD("flash needed") ;
     }
 
     mShutterLock.lock();
@@ -1730,7 +1876,7 @@ void QualcommCameraHardware::receivePreviewFrame(struct msm_frame_t *frame)
         //mDataCb(CAMERA_MSG_VIDEO_FRAME, mPreviewHeap->mBuffers[offset], mCallbackCookie);
 
         if (mReleasedRecordingFrame != true) {
-            LOGD("block for release frame request/command");
+            LOGV("block for release frame request/command");
             mRecordWait.wait(mRecordFrameLock);
         }
         mReleasedRecordingFrame = false;
@@ -1788,12 +1934,12 @@ void QualcommCameraHardware::stopRecording()
 void QualcommCameraHardware::releaseRecordingFrame(
        const sp<IMemory>& mem __attribute__((unused)))
 {
-    LOGD("releaseRecordingFrame E");
+    LOGV("releaseRecordingFrame E");
     Mutex::Autolock l(&mLock);
     Mutex::Autolock rLock(&mRecordFrameLock);
     mReleasedRecordingFrame = true;
     mRecordWait.signal();
-    LOGD("releaseRecordingFrame X");
+    LOGV("releaseRecordingFrame X");
 }
 
 bool QualcommCameraHardware::recordingEnabled()
@@ -1805,7 +1951,7 @@ void QualcommCameraHardware::notifyShutter()
 {
     mShutterLock.lock();
     if (mShutterPending && (mMsgEnabled & CAMERA_MSG_SHUTTER)) {
-        mNotifyCb(CAMERA_MSG_SHUTTER, 0, 0, mCallbackCookie);
+        mNotifyCb(CAMERA_MSG_SHUTTER, 0, 1, mCallbackCookie);
         mShutterPending = false;
     }
     mShutterLock.unlock();
@@ -1826,18 +1972,58 @@ void QualcommCameraHardware::receiveRawPicture()
 {
     LOGD("receiveRawPicture: E");
 
-    notifyShutter() ;
+    
+    
     if (mMsgEnabled & CAMERA_MSG_RAW_IMAGE) {
+    int nbtry = 0 ;
+    char ret = 0 ;
+    do {
+      ret = m4mo_read_8bit( 0x00, 0x0c ) ;
+      nbtry++ ;
+      usleep( 30000 ) ;
+    } while( ret != 7 && nbtry < 50 ) ;
+    
+    char r = m4mo_read_8bit( 0x00, 0x10 ) ;
+    m4mo_write_8bit( 0x0c, 0x04, 0x01 ) ;
+    m4mo_write_8bit( 0x0c, 0x05, 0x01 ) ;
+
       LOGD("before native_get_picture") ;
         if(native_get_picture(mCameraControlFd, &mCrop) == false) {
             LOGE("getPicture failed!");
             return;
         }
+    notifyShutter() ;
+        
+        char r1  = m4mo_read_8bit( 0x0c, 0x10 ) ;
+	char r2  = m4mo_read_8bit( 0x0c, 0x11 ) ;
+	char r3  = m4mo_read_8bit( 0x0c, 0x12 ) ;
+	char r4  = m4mo_read_8bit( 0x0c, 0x13 ) ;
+        
+	char r5  = m4mo_read_8bit( 0x00, 0x01 ) ;
+	char r6  = m4mo_read_8bit( 0x00, 0x02 ) ;
+	
+	char r7  = m4mo_read_8bit( 0x07, 0x00 ) ;
+	char r8  = m4mo_read_8bit( 0x07, 0x01 ) ;
+	char r9  = m4mo_read_8bit( 0x07, 0x02 ) ;
+	char r10 = m4mo_read_8bit( 0x07, 0x03 ) ;
+	char r11 = m4mo_read_8bit( 0x07, 0x04 ) ;
+	char r12 = m4mo_read_8bit( 0x07, 0x05 ) ;
+	char r13 = m4mo_read_8bit( 0x07, 0x06 ) ;
+	char r14 = m4mo_read_8bit( 0x07, 0x07 ) ;
+	
+	char r15 = m4mo_read_8bit( 0x07, 0x28 ) ;
+	char r16 = m4mo_read_8bit( 0x07, 0x29 ) ;
+	
+	char r17 = m4mo_read_8bit( 0x03, 0x01 ) ;
+	
+	char r18 = m4mo_read_8bit( 0x01, 0x04 ) ;
+	
+	char r19 = m4mo_read_8bit( 0x02, 0x0f ) ;
+	
+        
 	LOGD("native_get_picture done") ;
         // By the time native_get_picture returns, picture is taken. Call
-        // shutter callback if cam config thread has not done that.	
-               dump_to_file("/data/photo_qc.raw", (uint8_t *)mRawHeap->mHeap->base() , mRawWidth * mRawHeight * 1.5 );	
-			  
+        // shutter callback if cam config thread has not done that.				  
         mDataCb(CAMERA_MSG_RAW_IMAGE, mRawHeap->mBuffers[0], mCallbackCookie);
     }
     else LOGD("Raw-picture callback was canceled--skipping.");
@@ -1882,6 +2068,8 @@ void QualcommCameraHardware::receiveJpegPicture(void)
     LOGD("receiveJpegPicture: E image (%d uint8_ts out of %d)",
          mJpegSize, mJpegHeap->mBufferSize);
 
+    LOGD("mJpegHeap->mFrameOffset %d", mJpegHeap->mFrameOffset ) ;
+    
     int index = 0, rc;
 
     if (mMsgEnabled & CAMERA_MSG_COMPRESSED_IMAGE) {
@@ -1945,32 +2133,39 @@ void QualcommCameraHardware::setAntibanding()
     native_set_parm(CAMERA_SET_PARM_ANTIBANDING, sizeof(value), (void *)&value);
 }
 
+bool QualcommCameraHardware::flashNeeded()
+{
+
+  char val1 = m4mo_read_8bit( 0x03, 0x1e ) ;
+  char val2 = m4mo_read_8bit( 0x03, 0x1f ) ;
+
+  int res = (val1<<8) + val2 ;
+
+  LOGD("Flash needed Value found : %d", res ) ;
+
+  return false ;
+
+}
+
+void QualcommCameraHardware::startFlash()
+{
+}
+
+void QualcommCameraHardware::stopFlash()
+{
+}
 
 void QualcommCameraHardware::setLensToBasePosition()
 {
-  ioctl_m4mo_info_8bit cmd ;
-  cmd.category = 0x0a ;
-  cmd.byte = 0x10 ;
-  cmd.value = 0x01 ;
+  m4mo_write_8bit( 0x0a, 0x10, 0x01 ) ;
   
-  if ((ioctl(mCameraControlFd, MSM_CAM_IOCTL_M4MO_I2C_WRITE_8BIT, &cmd)) < 0)
-    LOGE("write_8bit : ioctl fd %d error %s\n",
-	  mCameraControlFd,
-	  strerror(errno));
 // Give it some time ( like donut kernel logs )
   usleep(200*1000);	  
-  if ((ioctl(mCameraControlFd, MSM_CAM_IOCTL_M4MO_I2C_READ_8BIT, &cmd)) < 0)
-    LOGE("read_8bit : ioctl fd %d error %s\n",
-	  mCameraControlFd,
-	  strerror(errno));
-
-  cmd.byte = 0x00 ;
-  cmd.value = 0x00 ;
   
-  if ((ioctl(mCameraControlFd, MSM_CAM_IOCTL_M4MO_I2C_WRITE_8BIT, &cmd)) < 0)
-    LOGE("write_8bit : ioctl fd %d error %s\n",
-	  mCameraControlFd,
-	  strerror(errno));	  
+  char res = m4mo_read_8bit( 0x0a, 0x10 ) ;
+ 
+  m4mo_write_8bit( 0x0a, 0x00, 0x00 ) ;
+  
 }
 
 QualcommCameraHardware::MemPool::MemPool(int buffer_size, int num_buffers,
