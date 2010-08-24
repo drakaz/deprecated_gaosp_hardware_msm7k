@@ -562,43 +562,6 @@ status_t QualcommCameraHardware::dump(int fd,
     return NO_ERROR;
 }
 
-static bool native_set_afmode(int camfd, isp3a_af_mode_t af_type)
-{
-    int rc;
-    struct msm_ctrl_cmd_t ctrlCmd;
-
-    ctrlCmd.timeout_ms = 5000;
-    ctrlCmd.type = CAMERA_SET_PARM_AUTO_FOCUS;
-    ctrlCmd.length = sizeof(af_type);
-    ctrlCmd.value = &af_type;
-//    ctrlCmd.resp_fd = camfd; // FIXME: this will be put in by the kernel
-
-    if ((rc = ioctl(camfd, MSM_CAM_IOCTL_CTRL_COMMAND, &ctrlCmd)) < 0)
-        LOGE("native_set_afmode: ioctl fd %d error %s\n",
-             camfd,
-             strerror(errno));
-
-    LOGD("native_set_afmode: ctrlCmd.status == %d\n", ctrlCmd.status);
-    return rc >= 0 && ctrlCmd.status == CAMERA_EXIT_CB_DONE;
-}
-
-static bool native_cancel_afmode(int camfd, int af_fd)
-{
-    int rc;
-    struct msm_ctrl_cmd_t ctrlCmd;
-
-    ctrlCmd.timeout_ms = 5000;
-    ctrlCmd.type = CAMERA_AUTO_FOCUS_CANCEL;
-    ctrlCmd.length = 0;
-//    ctrlCmd.resp_fd = af_fd;
-
-    if ((rc = ioctl(camfd, MSM_CAM_IOCTL_CTRL_COMMAND, &ctrlCmd)) < 0)
-        LOGE("native_cancel_afmode: ioctl fd %d error %s\n",
-             camfd,
-             strerror(errno));
-    return rc >= 0;
-}
-
 static bool native_start_preview(int camfd)
 {
   int ioctlRetVal = 1 ;
@@ -754,7 +717,7 @@ bool QualcommCameraHardware::native_jpeg_encode(void)
         }
       LOGD("jpeg main img quality done ") ;
     }
-  
+//   
     int thumbnail_quality = mParameters.getInt("jpeg-thumbnail-quality");
     if (thumbnail_quality >= 0) {
         LOGD("native_jpeg_encode, current jpeg thumbnail quality =%d",
@@ -1403,6 +1366,8 @@ status_t QualcommCameraHardware::startPreviewInternal()
         return UNKNOWN_ERROR;
     }
 
+    setLensToBasePosition() ;
+
     LOGD("startPreview X");
     return NO_ERROR;
 }
@@ -1453,7 +1418,7 @@ void QualcommCameraHardware::stopPreview()
 void QualcommCameraHardware::runAutoFocus()
 {
     mAutoFocusThreadLock.lock();
-    mAutoFocusFd = open(MSM_CAMERA_CONTROL, O_RDWR);
+    mAutoFocusFd = mCameraControlFd ; //open(MSM_CAMERA_CONTROL, O_RDWR);
     if (mAutoFocusFd < 0) {
         LOGE("autofocus: cannot open %s: %s",
              MSM_CAMERA_CONTROL,
@@ -1463,47 +1428,50 @@ void QualcommCameraHardware::runAutoFocus()
         return;
     }
 
-#if DLOPEN_LIBMMCAMERA
-    // We need to maintain a reference to liboemcamera.so for the duration of the
-    // AF thread, because we do not know when it will exit relative to the
-    // lifetime of this object.  We do not want to dlclose() liboemcamera while
-    // LINK_cam_frame is still running.
-    void *libhandle = ::dlopen("libmmcamera.so", RTLD_NOW);
-    LOGD("AF: loading libmmcamera at %p", libhandle);
-    if (!libhandle) {
-        LOGE("FATAL ERROR: could not dlopen libmmcamera.so: %s", dlerror());
-        close(mAutoFocusFd);
-        mAutoFocusFd = -1;
-        mAutoFocusThreadRunning = false;
-        mAutoFocusThreadLock.unlock();
-        return;
-    }
-#endif
+    mAFCanceled = false ;
 
     /* This will block until either AF completes or is cancelled. */
     LOGD("af start (fd %d)", mAutoFocusFd);
-    bool status = native_set_afmode(mAutoFocusFd, AF_MODE_AUTO);
-    LOGD("af done: %d", (int)status);
+    //bool status = native_set_afmode(mAutoFocusFd, AF_MODE_AUTO);
+    
+    m4mo_write_8bit( 0x0a, 0x00, 0x01 ) ;
+    m4mo_write_8bit( 0x0a, 0x01, 0x00 ) ;
+    usleep( 10000 ) ;
+    m4mo_write_8bit( 0x0a, 0x10, 0x01 ) ;
+    usleep( 10000 ) ;
+
+    char r = m4mo_read_8bit( 0x0a, 0x10 ) ;
+    LOGD("r = %d", r) ;
+    
+    m4mo_write_8bit( 0x0a, 0x02, 0x01 ) ;
+    
+ 
+    int i = 0 ;
+    char f = m4mo_read_8bit( 0x0a, 0x03 ) ;
+    while( f == 0 && !mAFCanceled && i < 1000 ) {
+	usleep( 20000 ) ;
+	f = m4mo_read_8bit( 0x0a, 0x03 ) ;
+	i++ ;
+    }
+    LOGD("af done: %d", f );
+    
+    m4mo_write_8bit( 0x0a, 0x02, 0x00 ) ;
+    
+    
     mAutoFocusThreadRunning = false;
-    close(mAutoFocusFd);
+    //close(mAutoFocusFd);
     mAutoFocusFd = -1;
     mAutoFocusThreadLock.unlock();
 
     if (mMsgEnabled & CAMERA_MSG_FOCUS)
-        mNotifyCb(CAMERA_MSG_FOCUS, status, 0, mCallbackCookie);
-
-#if DLOPEN_LIBMMCAMERA
-    if (libhandle) {
-        ::dlclose(libhandle);
-        LOGD("AF: dlclose(libmmcamera)");
-    }
-#endif
+        mNotifyCb(CAMERA_MSG_FOCUS, ( !mAFCanceled && f == 1 ), 0, mCallbackCookie);
 }
 
 status_t QualcommCameraHardware::cancelAutoFocus()
 {
     LOGD("cancelAutoFocus E");
     //native_cancel_afmode(mCameraControlFd, mAutoFocusFd);
+    mAFCanceled = true ;
     LOGD("cancelAutoFocus X");
 
     /* Needed for eclair camera PAI */
@@ -1565,16 +1533,34 @@ status_t QualcommCameraHardware::autoFocus()
     return NO_ERROR;
 }
 
-void QualcommCameraHardware::m4mo_write_8bit( char category, char byte, char value )
+void m4mo_write_8bit( int fd, char category, char byte, char value ) 
 {
   ioctl_m4mo_info_8bit cmd ;
   cmd.category = category ;
   cmd.byte = byte ;
   cmd.value = value ;
-  if ((ioctl(mCameraControlFd, MSM_CAM_IOCTL_M4MO_I2C_WRITE_8BIT, &cmd)) < 0)
+  if ((ioctl(fd, MSM_CAM_IOCTL_M4MO_I2C_WRITE_8BIT, &cmd)) < 0)
     LOGE("write_8bit : ioctl fd %d error %s\n",
-	mCameraControlFd,
+	fd,
 	strerror(errno));
+
+}
+
+char m4mo_read_8bit( int fd, char category, char byte ) 
+{
+  ioctl_m4mo_info_8bit cmd ;
+  cmd.category = category ;
+  cmd.byte = byte ;
+  if ((ioctl(fd, MSM_CAM_IOCTL_M4MO_I2C_READ_8BIT, &cmd)) < 0)
+    LOGE("write_8bit : ioctl fd %d error %s\n",
+	fd,
+	strerror(errno));
+  return cmd.value ;
+}
+
+void QualcommCameraHardware::m4mo_write_8bit( char category, char byte, char value )
+{
+  android::m4mo_write_8bit( mCameraControlFd, category, byte, value ) ;
 }
 
 void QualcommCameraHardware::m4mo_get_firmware_version()
@@ -1585,29 +1571,25 @@ void QualcommCameraHardware::m4mo_get_firmware_version()
 
 char QualcommCameraHardware::m4mo_read_8bit( char category, char byte ) 
 {
-  ioctl_m4mo_info_8bit cmd ;
-  cmd.category = category ;
-  cmd.byte = byte ;
-  if ((ioctl(mCameraControlFd, MSM_CAM_IOCTL_M4MO_I2C_READ_8BIT, &cmd)) < 0)
-    LOGE("write_8bit : ioctl fd %d error %s\n",
-	mCameraControlFd,
-	strerror(errno));
-  return cmd.value ;
+  return android::m4mo_read_8bit( mCameraControlFd, category, byte ) ;
 }
 
 void QualcommCameraHardware::runSnapshotThread(void *data)
 {
     LOGD("runSnapshotThread E");
-    if (native_start_snapshot(mCameraControlFd)) {
-	// guessed from logs 
-	usleep( 30000 ) ;
 	m4mo_write_8bit( 0x0C, 0x00, 0x00 ) ;
 	m4mo_write_8bit( 0x02, 0x00, 0x08 ) ;
 	m4mo_write_8bit( 0x02, 0x04, 0x06 ) ;
 	m4mo_write_8bit( 0x02, 0x25, 0x01 ) ;
 	m4mo_write_8bit( 0x00, 0x11, 0x08 ) ;
 	m4mo_write_8bit( 0x00, 0x12, 0x01 ) ;
+	usleep( 30000 ) ;
+
 	m4mo_write_8bit( 0x00, 0x0b, 0x03 ) ;
+	if (native_start_snapshot(mCameraControlFd)) {
+	// guessed from logs 
+	notifyShutter() ;
+
 	
         receiveRawPicture();
     }
@@ -1992,7 +1974,6 @@ void QualcommCameraHardware::receiveRawPicture()
             LOGE("getPicture failed!");
             return;
         }
-    notifyShutter() ;
         
         char r1  = m4mo_read_8bit( 0x0c, 0x10 ) ;
 	char r2  = m4mo_read_8bit( 0x0c, 0x11 ) ;
@@ -2019,7 +2000,9 @@ void QualcommCameraHardware::receiveRawPicture()
 	char r18 = m4mo_read_8bit( 0x01, 0x04 ) ;
 	
 	char r19 = m4mo_read_8bit( 0x02, 0x0f ) ;
+	char r20 = m4mo_read_8bit( 0x02, 0x11 ) ;
 	
+	char r21 = m4mo_read_8bit( 0x06, 0x02 ) ;
         
 	LOGD("native_get_picture done") ;
         // By the time native_get_picture returns, picture is taken. Call

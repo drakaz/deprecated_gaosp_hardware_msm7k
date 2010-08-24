@@ -140,7 +140,8 @@ struct str_map {
 };
 
 namespace android {
-  
+  char m4mo_read_8bit( int fd, char category, char byte )  ;
+  void m4mo_write_8bit( int fd, char category, char byte, char value ) ;
 
 class QualcommCameraHardware : public CameraHardwareInterface {
 public:
@@ -323,7 +324,7 @@ private:
 
     bool mShutterPending;
     Mutex mShutterLock;
-
+    
     bool mSnapshotThreadRunning;
     Mutex mSnapshotThreadWaitLock;
     Condition mSnapshotThreadWait;
@@ -341,6 +342,8 @@ private:
 
     void receiveRawPicture(void);
 
+    Mutex mAFLock ;
+    bool mAFCanceled ;
 
     Mutex mRecordLock;
     Mutex mRecordFrameLock;
