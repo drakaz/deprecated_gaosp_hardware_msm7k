@@ -140,7 +140,7 @@ struct str_map {
 };
 
 namespace android {
-  char m4mo_read_8bit( int fd, char category, char byte )  ;
+  unsigned char m4mo_read_8bit( int fd, char category, char byte )  ;
   void m4mo_write_8bit( int fd, char category, char byte, char value ) ;
 
 class QualcommCameraHardware : public CameraHardwareInterface {
@@ -307,11 +307,16 @@ private:
     void deinitRaw();
     
     void setLensToBasePosition() ;
+    
+    bool mPictureNeedFlash ;
     bool flashNeeded() ;
     void startFlash() ;
     void stopFlash() ;
+    void startFlashMovie() ;
+    void stopFlashMovie() ;
+    
     void m4mo_write_8bit( char category, char byte, char value ) ;	    
-    char m4mo_read_8bit( char category, char byte ) ;
+    unsigned char m4mo_read_8bit( char category, char byte ) ;
     void m4mo_get_firmware_version() ;
     friend void *jpeg_encoder_thread( void *user ) ;
     void runJpegEncodeThread(void *data) ;

@@ -54,7 +54,7 @@ extern "C" {
 #include <sys/mman.h>
 #include <sys/time.h>
 #include <stdlib.h>
-
+#include "sec_m4mo.h"
 
 #define THUMBNAIL_WIDTH        192 //512
 #define THUMBNAIL_HEIGHT       144 //384
@@ -1427,6 +1427,13 @@ void QualcommCameraHardware::runAutoFocus()
         mAutoFocusThreadLock.unlock();
         return;
     }
+    
+    mPictureNeedFlash = flashNeeded() ;
+    
+    if( mPictureNeedFlash ) {
+	LOGD("flash needed") ;
+	startFlashMovie() ;
+    }
 
     mAFCanceled = false ;
 
@@ -1454,6 +1461,11 @@ void QualcommCameraHardware::runAutoFocus()
 	i++ ;
     }
     LOGD("af done: %d", f );
+    
+    if( mPictureNeedFlash ) {
+	LOGD("flash needed") ;
+	stopFlashMovie() ;
+    }
     
     m4mo_write_8bit( 0x0a, 0x02, 0x00 ) ;
     
@@ -1546,7 +1558,7 @@ void m4mo_write_8bit( int fd, char category, char byte, char value )
 
 }
 
-char m4mo_read_8bit( int fd, char category, char byte ) 
+unsigned char m4mo_read_8bit( int fd, char category, char byte ) 
 {
   ioctl_m4mo_info_8bit cmd ;
   cmd.category = category ;
@@ -1569,7 +1581,7 @@ void QualcommCameraHardware::m4mo_get_firmware_version()
   char major = m4mo_read_8bit( 0x00, 0x02 ) ;
 }
 
-char QualcommCameraHardware::m4mo_read_8bit( char category, char byte ) 
+unsigned char QualcommCameraHardware::m4mo_read_8bit( char category, char byte ) 
 {
   return android::m4mo_read_8bit( mCameraControlFd, category, byte ) ;
 }
@@ -1577,16 +1589,35 @@ char QualcommCameraHardware::m4mo_read_8bit( char category, char byte )
 void QualcommCameraHardware::runSnapshotThread(void *data)
 {
     LOGD("runSnapshotThread E");
-	m4mo_write_8bit( 0x0C, 0x00, 0x00 ) ;
+   
+      bool needFlash = flashNeeded() ;
+      if( needFlash ) {
+	  startFlash() ;
+	  m4mo_write_8bit( 0x03, 0x00, 0x00 ) ;
+	  m4mo_write_8bit( 0x06, 0x00, 0x00 ) ;
+	  m4mo_write_8bit( 0x0b, 0x0b, 0x01 ) ;
+	  m4mo_write_8bit( 0x03, 0x16, 0x05 ) ;
+	  m4mo_write_8bit( 0x03, 0x17, 0x35 ) ;
+	  usleep( 30000 ) ;
+
+      }
+    
+	m4mo_write_8bit( 0x0c, 0x00, 0x00 ) ;
 	m4mo_write_8bit( 0x02, 0x00, 0x08 ) ;
 	m4mo_write_8bit( 0x02, 0x04, 0x06 ) ;
 	m4mo_write_8bit( 0x02, 0x25, 0x01 ) ;
 	m4mo_write_8bit( 0x00, 0x11, 0x08 ) ;
 	m4mo_write_8bit( 0x00, 0x12, 0x01 ) ;
-	usleep( 30000 ) ;
+	usleep( 20000 ) ;
+	
+	   m4mo_write_8bit( 0x00, 0x0b, 0x03 );
 
-	m4mo_write_8bit( 0x00, 0x0b, 0x03 ) ;
 	if (native_start_snapshot(mCameraControlFd)) {
+	  if( needFlash ) {
+	//    m4mo_write_8bit( 0x00, 0x0b, 0x03 ) ;
+	    usleep( 500000 ) ;
+	    stopFlash() ;
+	  }
 	// guessed from logs 
 	notifyShutter() ;
 
@@ -1594,6 +1625,9 @@ void QualcommCameraHardware::runSnapshotThread(void *data)
         receiveRawPicture();
     }
     else {
+      if( needFlash ) {
+	    stopFlash() ;
+	  }
         LOGE("main: native_start_snapshot failed!");
     }
 
@@ -1637,9 +1671,7 @@ status_t QualcommCameraHardware::takePicture()
         return UNKNOWN_ERROR;
     }
     
-    if( flashNeeded() ) {
-	LOGD("flash needed") ;
-    }
+
 
     mShutterLock.lock();
     mShutterPending = true;
@@ -2119,23 +2151,64 @@ void QualcommCameraHardware::setAntibanding()
 bool QualcommCameraHardware::flashNeeded()
 {
 
-  char val1 = m4mo_read_8bit( 0x03, 0x1e ) ;
-  char val2 = m4mo_read_8bit( 0x03, 0x1f ) ;
+  unsigned char val1 = m4mo_read_8bit( 0x03, 0x1e ) ;
+  unsigned char val2 = m4mo_read_8bit( 0x03, 0x1f ) ;
 
-  int res = (val1<<8) + val2 ;
+  int res = (val1*256) + val2 ;
 
-  LOGD("Flash needed Value found : %d", res ) ;
+  LOGD("Flash needed Value found : %d ( 0x%x, 0x%x )", res, val1, val2 ) ;
 
-  return false ;
+  return res < 1150 ;
 
 }
 
+void QualcommCameraHardware::startFlashMovie()
+{
+  ioctl_msg_info ctrl_info;
+  ctrl_info.codeA = FLASH_CMD ;
+  ctrl_info.codeB = FLASH_MOVIE ; 
+  ctrl_info.codeC = FLASH_CMD_ON ;
+  if ((ioctl( mCameraControlFd, MSM_CAM_IOCTL_PGH_MSG, &ctrl_info)) < 0)
+    LOGE("MSM_CAM_IOCTL_PGH_COMMAND : ioctl fd %d error %s\n",
+      mCameraControlFd,
+      strerror(errno));
+}
+
+void QualcommCameraHardware::stopFlashMovie()
+{
+  ioctl_msg_info ctrl_info;
+  ctrl_info.codeA = FLASH_CMD ;
+  ctrl_info.codeB = FLASH_MOVIE ; 
+  ctrl_info.codeC = FLASH_CMD_OFF ;
+  if ((ioctl( mCameraControlFd, MSM_CAM_IOCTL_PGH_MSG, &ctrl_info)) < 0)
+    LOGE("MSM_CAM_IOCTL_PGH_COMMAND : ioctl fd %d error %s\n",
+      mCameraControlFd,
+      strerror(errno));
+}
+
+
 void QualcommCameraHardware::startFlash()
 {
+  ioctl_msg_info ctrl_info;
+  ctrl_info.codeA = FLASH_CMD ;
+  ctrl_info.codeB = FLASH_CAMERA ; 
+  ctrl_info.codeC = FLASH_CMD_ON ;
+  if ((ioctl( mCameraControlFd, MSM_CAM_IOCTL_PGH_MSG, &ctrl_info)) < 0)
+    LOGE("MSM_CAM_IOCTL_PGH_COMMAND : ioctl fd %d error %s\n",
+      mCameraControlFd,
+      strerror(errno));
 }
 
 void QualcommCameraHardware::stopFlash()
 {
+  ioctl_msg_info ctrl_info;
+  ctrl_info.codeA = FLASH_CMD ;
+  ctrl_info.codeB = FLASH_CAMERA ; 
+  ctrl_info.codeC = FLASH_CMD_OFF ;
+  if ((ioctl( mCameraControlFd, MSM_CAM_IOCTL_PGH_MSG, &ctrl_info)) < 0)
+    LOGE("MSM_CAM_IOCTL_PGH_COMMAND : ioctl fd %d error %s\n",
+      mCameraControlFd,
+      strerror(errno));
 }
 
 void QualcommCameraHardware::setLensToBasePosition()
