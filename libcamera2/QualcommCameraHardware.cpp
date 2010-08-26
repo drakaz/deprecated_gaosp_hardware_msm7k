@@ -337,6 +337,7 @@ void QualcommCameraHardware::initDefaultParameters()
     p.set("antibanding", "off");
     p.set("effect", "none");
     p.set("whitebalance", "auto");
+    p.set("flash-mode", "auto") ;
 
 #if 0
     p.set("gps-timestamp", "1199145600"); // Jan 1, 2008, 00:00:00
@@ -356,6 +357,7 @@ void QualcommCameraHardware::initDefaultParameters()
     p.set("whitebalance-values", whitebalance_values);
     p.set("picture-size-values", "2560x1920,2048x1536,1600x1200,1024x768");
     p.set("preview-size-values", "384x288");
+    p.set("flash-mode-values", "off,auto,on") ;
     
     if (setParameters(p) != NO_ERROR) {
         LOGE("Failed to set default parameters?!");
@@ -2150,15 +2152,26 @@ void QualcommCameraHardware::setAntibanding()
 
 bool QualcommCameraHardware::flashNeeded()
 {
+  const char *str = mParameters.get("flash-mode");
+  LOGD("get-flashmode %s", str ) ;
+  if( strcmp( "auto", str) == 0 ) {
+    LOGD("flash-mode == auto") ;
+    unsigned char val1 = m4mo_read_8bit( 0x03, 0x1e ) ;
+    unsigned char val2 = m4mo_read_8bit( 0x03, 0x1f ) ;
 
-  unsigned char val1 = m4mo_read_8bit( 0x03, 0x1e ) ;
-  unsigned char val2 = m4mo_read_8bit( 0x03, 0x1f ) ;
+    int res = (val1*256) + val2 ;
 
-  int res = (val1*256) + val2 ;
+    LOGD("Flash needed Value found : %d ( 0x%x, 0x%x )", res, val1, val2 ) ;
+    return res < 1150 ;
+  } else if( strcmp( "on", str ) == 0 ) {
+    LOGD("flash-mode == on") ;
+    return true ;
+  } else {
+    LOGD("flash-mode == off") ;
+    return false; 
+  }
 
-  LOGD("Flash needed Value found : %d ( 0x%x, 0x%x )", res, val1, val2 ) ;
-
-  return res < 1150 ;
+  
 
 }
 
