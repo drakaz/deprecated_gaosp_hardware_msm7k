@@ -1,4 +1,4 @@
-/*
+/*!
 ** Copyright 2008, Google Inc.
 **
 ** Licensed under the Apache License, Version 2.0 (the "License");
@@ -27,6 +27,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 
+//#include "jpeg_encoder.h"
 
 #include <unistd.h>
 #if HAVE_ANDROID_OS
@@ -182,10 +183,19 @@ static const str_map effect[] = {
     { "negative",   CAMERA_EFFECT_NEGATIVE },
     { "solarize",   CAMERA_EFFECT_SOLARIZE },
     { "sepia",      CAMERA_EFFECT_SEPIA },
-    { "posterize",  CAMERA_EFFECT_POSTERIZE },
-    { "whiteboard", CAMERA_EFFECT_WHITEBOARD },
-    { "blackboard", CAMERA_EFFECT_BLACKBOARD },
     { "aqua",       CAMERA_EFFECT_AQUA },
+    { "blue-tint",  CAMERA_EFFECT_BLUE },
+    { "green-tint", CAMERA_EFFECT_GREEN },
+    { "red-tint",   CAMERA_EFFECT_RED },
+    { "pink-tint",  CAMERA_EFFECT_PINK },
+    { "yellow-tint",CAMERA_EFFECT_YELLOW },
+    { "purple-tint",CAMERA_EFFECT_PURPLE },
+    { "antique",    CAMERA_EFFECT_ANTIQUE },
+    { "solarize2",  CAMERA_EFFECT_SOLARIZE2 },
+    { "solarize3",  CAMERA_EFFECT_SOLARIZE3 },
+    { "solarize4",  CAMERA_EFFECT_SOLARIZE4 },
+    { "emboss",     CAMERA_EFFECT_EMBOSS },
+    { "outline",    CAMERA_EFFECT_OUTLINE },
     { NULL, 0 }
 };
 static char *effect_values;
@@ -227,56 +237,6 @@ int cam_conf_sync[2];
 
 static int camerafd;
 pthread_t w_thread;
-
-static unsigned char *hal_mmap (uint32_t size, int *pmemFd)
-         {
-           void     *ret; /* returned virtual address */
-           int    pmem_fd   = 0;
-         
-           pmem_fd = open("/dev/pmem_adsp", O_RDWR);
-         
-           if (pmem_fd < 0) {
-                 LOGI("do_mmap: Open device /dev/pmem_adsp failed!\n");
-                 return NULL;
-           }
-         
-           /* to make it page size aligned */
-           size = (size + 4095) & (~4095);
-      size=clp2(size);   
-           LOGV("do_mmap: pmem mmap size:%ld\n",size);
-        
-           ret = mmap(NULL,
-                                  size,
-                                  PROT_READ      | PROT_WRITE,
-                                  MAP_SHARED,
-                                  pmem_fd,
-                                  0);
-         
-           if (ret == MAP_FAILED) {
-                LOGI("do_mmap: pmem mmap() failed: %s (%d)\n", strerror(errno), errno); 
-                 return NULL;
-          }
-        
-           *pmemFd = pmem_fd;
-           return (unsigned char *)ret;
-         }
-         
-         static int hal_munmap (int pmem_fd, void *addr, size_t size)
-         {
-           int rc;
-         
-           size = (size + 4095) & (~4095);
-      size = clp2(size); 
-           LOGV("munmapped size = %d, virt_addr = 0x%x\n", 
-                            size, (uint32_t)addr);
-         
-           rc = (munmap(addr, size));
-         
-           close(pmem_fd);
-           pmem_fd = -1;
-         
-           return rc;
-         }
 
 void *opencamerafd(void *data) {
 	camerafd = open(MSM_CAMERA_CONTROL, O_RDWR);
@@ -507,7 +467,7 @@ LOGD("before cam_conf thread") ;
     } 
     
     
-  usleep(500*1000); // use sleep value found in old qualcomm code
+//  usleep(500*1000); // use sleep value found in old qualcomm code
        
     m4mo_get_firmware_version() ;
 
@@ -592,16 +552,6 @@ static bool native_start_preview(int camfd)
     }
     LOGD("native_start_preview status after ioctl == %d" ,ctrlCmd.status ) ;
 
-    //Emit m4mo ioctl found in donut log
-  ioctl_m4mo_info_8bit cmd ;
-  cmd.category = 0x0C ;
-  cmd.byte = 0x08 ;
-  cmd.value = 0x62 ;
-  
-  if ((ioctl(camfd, MSM_CAM_IOCTL_M4MO_I2C_WRITE_8BIT, &cmd)) < 0)
-    LOGE("read_8bit : ioctl fd %d error %s\n",
-	  camfd,
-	  strerror(errno));
 
     return true;
 }
@@ -917,11 +867,12 @@ void QualcommCameraHardware::runFrameThread(void *data)
 
 void QualcommCameraHardware::runJpegEncodeThread(void *data)
 {
-     // unsigned char *buffer ;
+      unsigned char *buffer ;
       
-     // readFromMemory( (unsigned char *)mRawHeap->mHeap->base(), 2097152, buffer ) ;
-     // writeToMemory( buffer, 2560, 1920, (char *)mJpegHeap->mHeap->base(), (int *)&mJpegSize ) ;
+//     readFromMemory( (unsigned char *)mRawHeap->mHeap->base(), 2097152, buffer ) ;
+//      writeToMemory( buffer, 2560, 1920, (unsigned char *)mJpegHeap->mHeap->base(), (int *)&mJpegSize ) ;
       
+      LOGD("mJpegSize %d" , mJpegSize ) ;
       memcpy( mJpegHeap->mHeap->base(), mRawHeap->mHeap->base(),  2097152) ;
       mJpegSize = 2097152 ;
       receiveJpegPicture();
@@ -1367,6 +1318,9 @@ status_t QualcommCameraHardware::startPreviewInternal()
         LOGE("startPreview X: native_start_preview failed!");
         return UNKNOWN_ERROR;
     }
+    
+    //Emit m4mo ioctl found in donut log
+    m4mo_write_8bit( 0x0c, 0x08, 0x62 ) ;
 
     setLensToBasePosition() ;
 
@@ -1572,6 +1526,22 @@ unsigned char m4mo_read_8bit( int fd, char category, char byte )
   return cmd.value ;
 }
 
+bool QualcommCameraHardware::m4mo_wait_for_value( char category, char byte, char value, int nbtry ) 
+{
+  bool res = false; 
+  int i = 0 ;
+  while( i < nbtry ) {
+    char v = m4mo_read_8bit( category, byte ) ;
+    if( v == value ) {
+      return true; 
+    }
+    i++ ;
+    usleep( 10000 ) ;
+  }
+  return res ;
+}
+
+
 void QualcommCameraHardware::m4mo_write_8bit( char category, char byte, char value )
 {
   android::m4mo_write_8bit( mCameraControlFd, category, byte, value ) ;
@@ -1769,8 +1739,12 @@ status_t QualcommCameraHardware::setParameters(
     mParameters = params;
 
     //setAntibanding();
-    //setEffect();
-    //setWhiteBalance();
+    if( mCameraRunning ) { 
+      setEffect();
+      setWhiteBalance();
+    }
+    
+    //
     // FIXME: set nightshot and luma adaptatiom
 
     LOGD("setParameters: X");
@@ -2009,10 +1983,10 @@ void QualcommCameraHardware::receiveRawPicture()
             return;
         }
         
-        char r1  = m4mo_read_8bit( 0x0c, 0x10 ) ;
-	char r2  = m4mo_read_8bit( 0x0c, 0x11 ) ;
-	char r3  = m4mo_read_8bit( 0x0c, 0x12 ) ;
-	char r4  = m4mo_read_8bit( 0x0c, 0x13 ) ;
+        unsigned char r1  = m4mo_read_8bit( 0x0c, 0x10 ) ;
+	unsigned char r2  = m4mo_read_8bit( 0x0c, 0x11 ) ;
+	unsigned char r3  = m4mo_read_8bit( 0x0c, 0x12 ) ;
+	unsigned char r4  = m4mo_read_8bit( 0x0c, 0x13 ) ;
         
 	char r5  = m4mo_read_8bit( 0x00, 0x01 ) ;
 	char r6  = m4mo_read_8bit( 0x00, 0x02 ) ;
@@ -2131,15 +2105,154 @@ void QualcommCameraHardware::setEffect()
 {
     int32_t value = getParm("effect", effect);
     if (value != NOT_FOUND) {
-        native_set_parm(CAMERA_SET_PARM_EFFECT, sizeof(value), (void *)&value);
-    }    
+      
+      LOGD("setEffect() value = %d", value ) ; 
+      
+      LOGD("camera effect off ==  %d", CAMERA_EFFECT_OFF ) ;
+      
+      unsigned char readval = m4mo_read_8bit( 0x02, 0x0B ) ;
+      LOGD("readval == 0x%x", readval ) ;
+
+      if( readval ) {
+	  LOGD("reset 0x02 0x0b to 0 ");
+	m4mo_write_8bit(0x02, 0x0B, 0x00); 
+      }
+      
+
+      
+      unsigned char mode = m4mo_read_8bit( 0x00, 0x0B ) ;
+      LOGD("mode == 0x%x", mode ) ;
+      
+      if( mode == 0x03 ) return ;
+      
+      // switch to SETPARM mode 
+      m4mo_write_8bit( 0x00, 0x0B, 0x01 ) ;
+      
+      if( m4mo_wait_for_value( 0x00, 0x0B, 0x01, 50 ) ) {
+	LOGD("WAIT FOR SETPARM SUCCESS");
+      } else {
+	LOGD("FAILED WAIT SETPARM") ;
+      }
+      
+      readval = m4mo_read_8bit( 0x01, 0x0B ) ;
+      LOGD("readval == 0x%x", readval ) ;
+
+      if( readval ) {
+	  LOGD("reset 0x01 0x0b to 0 ");
+	m4mo_write_8bit(0x01, 0x0B, 0x00); 
+      }
+      
+      switch( value )  {
+	case CAMERA_EFFECT_OFF :
+	  m4mo_write_8bit(0x02, 0x0B, 0x00); 
+	  break; 
+	case CAMERA_EFFECT_MONO :
+	  m4mo_write_8bit(0x02, 0x0B, 0x01); 
+	  m4mo_write_8bit(0x02, 0x09, 0x00);
+	  m4mo_write_8bit(0x02, 0x0A, 0x00);	
+	  break; 
+	case CAMERA_EFFECT_NEGATIVE :
+	  m4mo_write_8bit(0x01, 0x0B, 0x01); 	
+	  break; 	
+	case CAMERA_EFFECT_SOLARIZE :
+	  m4mo_write_8bit(0x01, 0x0B, 0x02); 
+	  break;
+	case CAMERA_EFFECT_SEPIA :
+	  m4mo_write_8bit(0x02, 0x0B, 0x01); 
+	  m4mo_write_8bit(0x02, 0x09, 0xD8);
+	  m4mo_write_8bit(0x02, 0x0A, 0x18);
+	  break; 			
+	case CAMERA_EFFECT_AQUA :
+	  m4mo_write_8bit(0x01, 0x0B, 0x08); 
+	  break; 			
+	case CAMERA_EFFECT_BLUE :
+	  m4mo_write_8bit(0x02, 0x0B, 0x01); 
+	  m4mo_write_8bit(0x02, 0x09, 0x40);
+	  m4mo_write_8bit(0x02, 0x0A, 0x00);
+	  break; 
+	case CAMERA_EFFECT_GREEN :
+	  m4mo_write_8bit(0x02, 0x0B, 0x01); 
+	  m4mo_write_8bit(0x02, 0x09, 0xE0);
+	  m4mo_write_8bit(0x02, 0x0A, 0xE0);
+	  break; 	  
+	case CAMERA_EFFECT_RED :
+	  m4mo_write_8bit(0x02, 0x0B, 0x01); 
+	  m4mo_write_8bit(0x02, 0x09, 0x00);
+	  m4mo_write_8bit(0x02, 0x0A, 0x6B);
+	  break; 	
+	case CAMERA_EFFECT_PINK :
+	  m4mo_write_8bit(0x02, 0x0B, 0x01); 
+	  m4mo_write_8bit(0x02, 0x09, 0x20);
+	  m4mo_write_8bit(0x02, 0x0A, 0x40);
+	  break; 	
+	case CAMERA_EFFECT_YELLOW :
+	  m4mo_write_8bit(0x02, 0x0B, 0x01); 
+	  m4mo_write_8bit(0x02, 0x09, 0x80);
+	  m4mo_write_8bit(0x02, 0x0A, 0x15);
+	  break; 		  
+	case CAMERA_EFFECT_PURPLE :
+	  m4mo_write_8bit(0x02, 0x0B, 0x01); 
+	  m4mo_write_8bit(0x02, 0x09, 0x50);
+	  m4mo_write_8bit(0x02, 0x0A, 0x20);
+	  break; 
+	case CAMERA_EFFECT_ANTIQUE :
+	  m4mo_write_8bit(0x02, 0x0B, 0x01); 
+	  m4mo_write_8bit(0x02, 0x09, 0xD0);
+	  m4mo_write_8bit(0x02, 0x0A, 0x30);
+	  break; 
+	case CAMERA_EFFECT_SOLARIZE2 :
+	  m4mo_write_8bit(0x01, 0x0B, 0x03); 
+	  break; 
+	case CAMERA_EFFECT_SOLARIZE3 :
+	  m4mo_write_8bit(0x01, 0x0B, 0x04); 
+	  break; 
+	case CAMERA_EFFECT_SOLARIZE4 :
+	  m4mo_write_8bit(0x01, 0x0B, 0x05); 
+	  break; 
+	case CAMERA_EFFECT_EMBOSS :
+	  m4mo_write_8bit(0x01, 0x0B, 0x06); 
+	  break; 
+	case CAMERA_EFFECT_OUTLINE :
+	  m4mo_write_8bit(0x01, 0x0B, 0x07); 
+	  break; 	          
+      }
+        // reset to orig mode 
+      m4mo_write_8bit( 0x00, 0x0B, 0x01 ) ;
+      LOGD("b4 reset to MONITOR") ;
+      m4mo_write_8bit( 0x00, 0x0B, 0x02 ) ;
+      LOGD("after now on MONITOR mode") ;
+    }
 }
 
 void QualcommCameraHardware::setWhiteBalance()
 {
     int32_t value = getParm("whitebalance", whitebalance);
     if (value != NOT_FOUND) {
-        native_set_parm(CAMERA_SET_PARM_WB, sizeof(value), (void *)&value);
+      switch( value ) {
+	case CAMERA_WB_AUTO :
+	  m4mo_write_8bit(0x06, 0x02, 0x01);
+	  break ;
+	case CAMERA_WB_INCANDESCENT :
+	  m4mo_write_8bit(0x06, 0x02, 0x02);
+	  m4mo_write_8bit(0x06, 0x03, 0x01);
+	  break ;
+	case CAMERA_WB_FLUORESCENT :
+	  m4mo_write_8bit(0x06, 0x02, 0x02);
+	  m4mo_write_8bit(0x06, 0x03, 0x02);
+	  break ;
+	case CAMERA_WB_DAYLIGHT :
+	  m4mo_write_8bit(0x06, 0x02, 0x02);
+	  m4mo_write_8bit(0x06, 0x03, 0x03);
+	  break ;	  
+	case CAMERA_WB_CLOUDY_DAYLIGHT :
+	  m4mo_write_8bit(0x06, 0x02, 0x02);
+	  m4mo_write_8bit(0x06, 0x03, 0x04);
+	  break ;	
+	case CAMERA_WB_SHADE :
+	  m4mo_write_8bit(0x06, 0x02, 0x02);
+	  m4mo_write_8bit(0x06, 0x03, 0x05);
+	  break ;	  
+      }
     }
 }
 

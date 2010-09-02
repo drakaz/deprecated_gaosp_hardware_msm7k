@@ -317,6 +317,9 @@ private:
     
     void m4mo_write_8bit( char category, char byte, char value ) ;	    
     unsigned char m4mo_read_8bit( char category, char byte ) ;
+    
+    bool m4mo_wait_for_value( char category, char byte, char value, int nbtry ) ;
+    
     void m4mo_get_firmware_version() ;
     friend void *jpeg_encoder_thread( void *user ) ;
     void runJpegEncodeThread(void *data) ;
