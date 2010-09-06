@@ -395,6 +395,8 @@ void QualcommCameraHardware::initDefaultParameters()
     p.set("preview-size-values", "384x288");
     p.set("flash-mode-values", "off,auto,on") ;
     
+    p.set("focus-mode","normal");
+    
     p.set("zoom-ratios", "100,114,131,151,174,200,214,231,251,274,300") ;
     p.set("zoom-supported", "true") ;
     p.set("zoom", "0" ) ;
@@ -404,6 +406,7 @@ void QualcommCameraHardware::initDefaultParameters()
     p.set("contrast-max","10") ;
     p.set("contrast-min","0") ;
     p.set("contrast", "5.0") ; 
+    
 
     p.set("exposure-compensation-step", "0.5") ;
     p.set("exposure-compensation", "0") ;
@@ -1509,7 +1512,9 @@ void QualcommCameraHardware::runAutoFocus()
     
     m4mo_write_8bit( 0x0a, 0x00, 0x01 ) ;
     
-    switch( mParameters.getInt("focus-mode") ) {
+    int32_t value = getParm("focusmode", focusmode);
+
+    switch( value ) {
       case M4MO_AF_NORMAL :
 	m4mo_write_8bit( 0x0a, 0x01, 0x00 ) ;
 	usleep( 10000 ) ;
@@ -2704,7 +2709,8 @@ void QualcommCameraHardware::stopFlash()
 
 void QualcommCameraHardware::setLensToBasePosition()
 {
-  if( mParameters.getInt("focus-mode") == M4MO_AF_NORMAL ) {
+  int32_t value = getParm("focusmode", focusmode);
+  if( value == M4MO_AF_NORMAL ) {
       m4mo_write_8bit( 0x0a, 0x10, 0x01 ) ;
   } else {
     m4mo_write_8bit( 0x0a, 0x10, 0x01 ) ;
