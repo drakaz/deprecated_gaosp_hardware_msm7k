@@ -1512,8 +1512,7 @@ void QualcommCameraHardware::runAutoFocus()
     
     m4mo_write_8bit( 0x0a, 0x00, 0x01 ) ;
     
-    int32_t value = getParm("focusmode", focusmode);
-
+    int32_t value = getParm("focus-mode", focusmode);
     switch( value ) {
       case M4MO_AF_NORMAL :
 	m4mo_write_8bit( 0x0a, 0x01, 0x00 ) ;
@@ -2709,7 +2708,7 @@ void QualcommCameraHardware::stopFlash()
 
 void QualcommCameraHardware::setLensToBasePosition()
 {
-  int32_t value = getParm("focusmode", focusmode);
+  int32_t value = getParm("focus-mode", focusmode);
   if( value == M4MO_AF_NORMAL ) {
       m4mo_write_8bit( 0x0a, 0x10, 0x01 ) ;
   } else {
