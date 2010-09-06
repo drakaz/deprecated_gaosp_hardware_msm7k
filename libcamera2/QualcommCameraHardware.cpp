@@ -200,6 +200,71 @@ static const str_map effect[] = {
 };
 static char *effect_values;
 
+static const str_map iso[] = {
+    { "auto",	M4MO_ISO_AUTO },
+    { "50",	M4MO_ISO_50 },
+    { "100",	M4MO_ISO_100 },
+    { "200",	M4MO_ISO_200 },
+    { "400",	M4MO_ISO_400 },
+    { "800",	M4MO_ISO_800 },
+    { "1000",	M4MO_ISO_1000 },
+    { NULL, 0 }
+} ;
+static char *iso_values ;
+
+static const str_map focusmode[] = {
+    { "normal",	M4MO_AF_NORMAL },
+    { "macro",	M4MO_AF_MACRO },
+    { NULL, 0 }
+} ;
+static char *focusmode_values ;
+
+
+static const str_map contrast[] = {
+    { "0.0",	M4MO_CONTRAST_MINUS_2 },
+    { "2.5",	M4MO_CONTRAST_MINUS_1 },
+    { "5.0",	M4MO_CONTRAST_DEFAULT },
+    { "7.5",	M4MO_CONTRAST_PLUS_1 },
+    { "10.0",	M4MO_CONTRAST_PLUS_2 },
+    { NULL, 0 }
+} ;
+static char *contrast_values ;
+
+static const str_map saturation[] = {
+    { "0.0",	M4MO_SATURATION_MINUS_2 },
+    { "2.5",	M4MO_SATURATION_MINUS_1 },
+    { "5.0",	M4MO_SATURATION_DEFAULT },
+    { "7.5",	M4MO_SATURATION_PLUS_1 },
+    { "10.0",	M4MO_SATURATION_PLUS_2 },
+    { NULL, 0 }
+} ;
+static char *saturation_values ;
+
+static const str_map sharpness[] = {
+    { "0.0",	M4MO_SHARPNESS_MINUS_2 },
+    { "5.0",	M4MO_SHARPNESS_MINUS_1 },
+    { "10.0",	M4MO_SHARPNESS_DEFAULT },
+    { "15.0",	M4MO_SHARPNESS_PLUS_1 },
+    { "20.0",	M4MO_SHARPNESS_PLUS_2 },
+    { NULL, 0 }
+} ;
+static char *sharpness_values ;
+
+static const str_map exposure[] = {
+    { "8",	M4MO_EV_MINUS_4 },
+    { "6",	M4MO_EV_MINUS_3 },  
+    { "4",	M4MO_EV_MINUS_2 },
+    { "2",	M4MO_EV_MINUS_1 },
+    { "0",	M4MO_EV_DEFAULT },
+    { "-2",	M4MO_EV_PLUS_1 },
+    { "-4",	M4MO_EV_PLUS_2 },
+    { "-6",	M4MO_EV_PLUS_3 },
+    { "-8",	M4MO_EV_PLUS_4 },
+    { NULL, 0 }
+} ;
+static char *exposure_values ;
+//4 2 0 -2 -4
+
 // from qcamera/common/camera.h
 static const str_map antibanding[] = {
     { "off",  CAMERA_ANTIBANDING_OFF },
@@ -298,7 +363,8 @@ void QualcommCameraHardware::initDefaultParameters()
     p.set("effect", "none");
     p.set("whitebalance", "auto");
     p.set("flash-mode", "auto") ;
-
+    p.set("iso", "auto");
+    p.set("focus-mode", "normal") ;
 #if 0
     p.set("gps-timestamp", "1199145600"); // Jan 1, 2008, 00:00:00
     p.set("gps-latitude", "37.736071"); // A little house in San Francisco
@@ -311,14 +377,58 @@ void QualcommCameraHardware::initDefaultParameters()
     INIT_VALUES_FOR(antibanding);
     INIT_VALUES_FOR(effect);
     INIT_VALUES_FOR(whitebalance);
+    INIT_VALUES_FOR(iso);
+    INIT_VALUES_FOR(focusmode);
+    INIT_VALUES_FOR(contrast);
+    INIT_VALUES_FOR(saturation);
+    INIT_VALUES_FOR(sharpness);
+    INIT_VALUES_FOR(exposure);
 
+    
     p.set("antibanding-values", antibanding_values);
     p.set("effect-values", effect_values);
     p.set("whitebalance-values", whitebalance_values);
+    p.set("iso-values", iso_values ) ;
+    p.set("focus-mode-values", focusmode_values ) ;
+    
     p.set("picture-size-values", "2560x1920,2048x1536,1600x1200,1024x768");
     p.set("preview-size-values", "384x288");
     p.set("flash-mode-values", "off,auto,on") ;
     
+    p.set("zoom-ratios", "100,114,131,151,174,200,214,231,251,274,300") ;
+    p.set("zoom-supported", "true") ;
+    p.set("zoom", "0" ) ;
+    p.set("max-zoom", "10" ) ;
+    
+    p.set("contrast-def","5") ;
+    p.set("contrast-max","10") ;
+    p.set("contrast-min","0") ;
+    p.set("contrast", "5.0") ; 
+
+    p.set("exposure-compensation-step", "0.5") ;
+    p.set("exposure-compensation", "0") ;
+    p.set("min-exposure-compensation", "-8") ; 
+    p.set("max-exposure-compensation", "8") ; 
+	  
+    p.set("saturation-def", "5") ;
+    p.set("saturation-max", "10") ;
+    p.set("saturation-min", "1") ;
+    p.set("saturation", "7.5") ;
+	  
+    p.set("sharpness-def", "10") ;
+    p.set("sharpness-max", "30") ;
+    p.set("sharpness-min", "0") ;
+    p.set("sharpness", "15.0") ;
+
+    mIso = 1 ;
+    mEffect = 1 ;
+    mWhiteBalance = 1;
+    mFocusMode = 1 ;
+    mZoom = 0 ;
+    mContrast = 3 ;
+    mSaturation = 3 ;
+    mSharpness = 3 ;
+    mExposure = 5 ;
     if (setParameters(p) != NO_ERROR) {
         LOGE("Failed to set default parameters?!");
     }
@@ -1398,10 +1508,21 @@ void QualcommCameraHardware::runAutoFocus()
     //bool status = native_set_afmode(mAutoFocusFd, AF_MODE_AUTO);
     
     m4mo_write_8bit( 0x0a, 0x00, 0x01 ) ;
-    m4mo_write_8bit( 0x0a, 0x01, 0x00 ) ;
-    usleep( 10000 ) ;
-    m4mo_write_8bit( 0x0a, 0x10, 0x01 ) ;
-    usleep( 10000 ) ;
+    
+    switch( mParameters.getInt("focus-mode") ) {
+      case M4MO_AF_NORMAL :
+	m4mo_write_8bit( 0x0a, 0x01, 0x00 ) ;
+	usleep( 10000 ) ;
+	m4mo_write_8bit( 0x0a, 0x10, 0x01 ) ;
+	usleep( 10000 ) ;
+	break ;
+      case M4MO_AF_MACRO :
+	m4mo_write_8bit( 0x0a, 0x01, 0x01 ) ;
+	usleep( 10000 ) ;
+	m4mo_write_8bit( 0x0a, 0x10, 0x02 ) ;
+	usleep( 10000 ) ;      
+	break;
+    }
 
     char r = m4mo_read_8bit( 0x0a, 0x10 ) ;
     LOGD("r = %d", r) ;
@@ -1541,7 +1662,26 @@ bool QualcommCameraHardware::m4mo_wait_for_value( char category, char byte, char
   return res ;
 }
 
+bool QualcommCameraHardware::m4mo_switch_to_param_mode()
+{
+        // switch to SETPARM mode 
+      m4mo_write_8bit( 0x00, 0x0B, 0x01 ) ;
+      
+      if( m4mo_wait_for_value( 0x00, 0x0B, 0x01, 50 ) ) {
+	LOGD("WAIT FOR SETPARM SUCCESS");
+	return true;
+      } else {
+	LOGD("FAILED WAIT SETPARM") ;
+	return false ;
+      }
+      
+}
 
+void QualcommCameraHardware::m4mo_switch_to_monitor_mode()
+{
+  m4mo_write_8bit( 0x00, 0x0B, 0x02 ) ;
+}
+    
 void QualcommCameraHardware::m4mo_write_8bit( char category, char byte, char value )
 {
   android::m4mo_write_8bit( mCameraControlFd, category, byte, value ) ;
@@ -1742,6 +1882,12 @@ status_t QualcommCameraHardware::setParameters(
     if( mCameraRunning ) { 
       setEffect();
       setWhiteBalance();
+      setZoom() ;
+      setIso() ;
+      setExposure() ;
+      setSharpness() ;
+      setSaturation() ;
+      setContrast() ;      
     }
     
     //
@@ -2101,9 +2247,209 @@ int QualcommCameraHardware::getParm(
     return attr_lookup(parm_map, str);
 }
 
+void QualcommCameraHardware::setExposure()
+{
+      int32_t value = getParm("exposure-compensation", exposure);
+LOGD("exposure == %s", mParameters.get("exposure-compensation") ) ;
+    // same as before, do nothing
+    if( value == mExposure ) 
+      return ;
+    if( value != NOT_FOUND ) {    
+      switch( value ) {
+	case M4MO_EV_MINUS_4:
+	  m4mo_write_8bit(0x06, 0x04, 0xFC);
+	  break;
+	case M4MO_EV_MINUS_3:
+	  m4mo_write_8bit(0x06, 0x04, 0xFD);
+	  break;
+	case M4MO_EV_MINUS_2:
+	  m4mo_write_8bit(0x06, 0x04, 0xFE);
+	  break;
+	case M4MO_EV_MINUS_1:
+	  m4mo_write_8bit(0x06, 0x04, 0xFF);
+	  break;
+	case M4MO_EV_DEFAULT:
+	  m4mo_write_8bit(0x06, 0x04, 0x00);
+	  break;
+	case M4MO_EV_PLUS_1:
+	  m4mo_write_8bit(0x06, 0x04, 0x01);
+	  break;
+	case M4MO_EV_PLUS_2:
+	  m4mo_write_8bit(0x06, 0x04, 0x02);
+	  break;
+	case M4MO_EV_PLUS_3:
+	  m4mo_write_8bit(0x06, 0x04, 0x03);
+	  break;
+	case M4MO_EV_PLUS_4:
+	  m4mo_write_8bit(0x06, 0x04, 0x04);
+	  break;		  
+      }
+      mExposure = value ;
+    }else {
+      LOGE("exposure %s not found", mParameters.get("exposure-compensation") ) ;
+    }
+}
+
+
+void QualcommCameraHardware::setSharpness()
+{
+      int32_t value = getParm("sharpness", sharpness);
+LOGD("sharpness == %s", mParameters.get("sharpness")) ;
+    // same as before, do nothing
+    if( value == mSharpness ) 
+      return ;
+    if( value != NOT_FOUND ) {    
+      switch( value ) {
+	case M4MO_SHARPNESS_MINUS_2:
+	  m4mo_write_8bit(0x02, 0x11, 0x3E);
+	  m4mo_write_8bit(0x02, 0x12, 0x00);
+	  break;
+	case M4MO_SHARPNESS_MINUS_1:
+	  m4mo_write_8bit(0x02, 0x11, 0x5F);
+	  m4mo_write_8bit(0x02, 0x12, 0x00);
+	  break;
+	case M4MO_SHARPNESS_DEFAULT:
+	  m4mo_write_8bit(0x02, 0x11, 0x80);
+	  m4mo_write_8bit(0x02, 0x12, 0x01);
+	  break;
+	case M4MO_SHARPNESS_PLUS_1:
+	  m4mo_write_8bit(0x02, 0x11, 0xA1);
+	  m4mo_write_8bit(0x02, 0x12, 0x00);
+	  break;
+	case M4MO_SHARPNESS_PLUS_2:
+	  m4mo_write_8bit(0x02, 0x11, 0xC2);
+	  m4mo_write_8bit(0x02, 0x12, 0x00);
+	  break;	
+      }
+      mSharpness = value ;
+    } else {
+      LOGE("sharpness %s not found", mParameters.get("sharpness") ) ;
+    }
+}
+
+void QualcommCameraHardware::setSaturation()
+{
+    int32_t value = getParm("saturation", saturation);
+ LOGD("saturation == %s", mParameters.get("saturation") ) ;
+    // same as before, do nothing
+    if( value == mSaturation ) 
+      return ;
+    
+    if( value != NOT_FOUND ) {
+      switch( value ) {
+	case M4MO_SATURATION_MINUS_2:
+	  m4mo_write_8bit(0x02, 0x0F, 0x3E);
+	  m4mo_write_8bit(0x02, 0x10, 0x00);
+	  break;
+	case M4MO_SATURATION_MINUS_1:
+	  m4mo_write_8bit(0x02, 0x0F, 0x5F);
+	  m4mo_write_8bit(0x02, 0x10, 0x00);
+	  break;
+	case M4MO_SATURATION_DEFAULT:
+	  m4mo_write_8bit(0x02, 0x0F, 0x80);
+	  m4mo_write_8bit(0x02, 0x10, 0x01);
+	  break;
+	case M4MO_SATURATION_PLUS_1:
+	  m4mo_write_8bit(0x02, 0x0F, 0xA1);
+	  m4mo_write_8bit(0x02, 0x10, 0x00);
+	  break;
+	case M4MO_SATURATION_PLUS_2:
+	  m4mo_write_8bit(0x02, 0x0F, 0xC2);
+	  m4mo_write_8bit(0x02, 0x10, 0x00);
+	  break;
+	default:
+	    LOGE("Invalid contrast value") ;
+      }
+      mSaturation = value ;
+    }else {
+      LOGE("saturation %s not found", mParameters.get("saturation") ) ;
+    }
+}
+
+void QualcommCameraHardware::setContrast()
+{
+    int32_t value = getParm("contrast", contrast);
+    LOGD("contrast == %s", mParameters.get("contrast") ) ;
+    // same as before, do nothing
+    if( value == mContrast ) 
+      return ;
+    
+    if( value != NOT_FOUND ) {
+      m4mo_switch_to_param_mode() ;
+      switch( value ) {
+	case M4MO_CONTRAST_MINUS_2:
+	  m4mo_write_8bit(0x01, 0x04, 0x3E);
+	  break;
+	case M4MO_CONTRAST_MINUS_1:
+	  m4mo_write_8bit(0x01, 0x04, 0x5F);
+	  break;
+	case M4MO_CONTRAST_DEFAULT:
+	  m4mo_write_8bit(0x01, 0x04, 0x80);
+	  break;
+	case M4MO_CONTRAST_PLUS_1:
+	  m4mo_write_8bit(0x01, 0x04, 0xA1);
+	  break;
+	case M4MO_CONTRAST_PLUS_2:
+	  m4mo_write_8bit(0x01, 0x04, 0xC2);
+	  break;
+	default:
+	    LOGE("Invalid contrast value") ;
+      }
+      mContrast = value ;
+      m4mo_switch_to_monitor_mode() ;
+    }else {
+      LOGE("contrast %s not found", mParameters.get("contrast") ) ;
+    }
+}
+
+void QualcommCameraHardware::setIso()
+{
+    int32_t value = getParm("iso", iso);
+
+    // same as before, do nothing
+    if( value == mIso ) 
+      return ;
+    
+    if( value != NOT_FOUND ) {
+      switch( value ) {
+	case M4MO_ISO_AUTO:
+	  m4mo_write_8bit(0x03, 0x05, 0x00);
+	  break;
+	case M4MO_ISO_50:
+	  m4mo_write_8bit(0x03, 0x05, 0x01);
+	  break;
+	case M4MO_ISO_100:
+	  m4mo_write_8bit(0x03, 0x05, 0x02);
+	  break;
+	case M4MO_ISO_200:
+	  m4mo_write_8bit(0x03, 0x05, 0x03);
+	  break;
+	case M4MO_ISO_400:
+	  m4mo_write_8bit(0x03, 0x05, 0x04);
+	  break;
+	case M4MO_ISO_800:
+	  m4mo_write_8bit(0x03, 0x05, 0x05);
+	  break;
+	case M4MO_ISO_1000:
+	  m4mo_write_8bit(0x03, 0x05, 0x06);
+	  break;
+	default:
+	    LOGE("Invalid iso value") ;
+      }
+      mIso = value ;
+    }else {
+      LOGE("iso %s not found", mParameters.get("iso") ) ;
+    }
+}
+
 void QualcommCameraHardware::setEffect()
 {
     int32_t value = getParm("effect", effect);
+
+    // same as before, do nothing
+    if( value == mEffect ) 
+      return ;
+    
     if (value != NOT_FOUND) {
       
       LOGD("setEffect() value = %d", value ) ; 
@@ -2125,14 +2471,7 @@ void QualcommCameraHardware::setEffect()
       
       if( mode == 0x03 ) return ;
       
-      // switch to SETPARM mode 
-      m4mo_write_8bit( 0x00, 0x0B, 0x01 ) ;
-      
-      if( m4mo_wait_for_value( 0x00, 0x0B, 0x01, 50 ) ) {
-	LOGD("WAIT FOR SETPARM SUCCESS");
-      } else {
-	LOGD("FAILED WAIT SETPARM") ;
-      }
+      m4mo_switch_to_param_mode() ;
       
       readval = m4mo_read_8bit( 0x01, 0x0B ) ;
       LOGD("readval == 0x%x", readval ) ;
@@ -2149,7 +2488,7 @@ void QualcommCameraHardware::setEffect()
 	case CAMERA_EFFECT_MONO :
 	  m4mo_write_8bit(0x02, 0x0B, 0x01); 
 	  m4mo_write_8bit(0x02, 0x09, 0x00);
-	  m4mo_write_8bit(0x02, 0x0A, 0x00);	
+	  m4mo_write_8bit(0x02, 0x0A, 0x00);
 	  break; 
 	case CAMERA_EFFECT_NEGATIVE :
 	  m4mo_write_8bit(0x01, 0x0B, 0x01); 	
@@ -2216,17 +2555,42 @@ void QualcommCameraHardware::setEffect()
 	  m4mo_write_8bit(0x01, 0x0B, 0x07); 
 	  break; 	          
       }
-        // reset to orig mode 
-      m4mo_write_8bit( 0x00, 0x0B, 0x01 ) ;
-      LOGD("b4 reset to MONITOR") ;
-      m4mo_write_8bit( 0x00, 0x0B, 0x02 ) ;
-      LOGD("after now on MONITOR mode") ;
+      m4mo_switch_to_monitor_mode() ;
+      mEffect = value ;
     }
+}
+
+void QualcommCameraHardware::setZoom()
+{
+    int32_t val = mParameters.getInt("zoom") ;
+
+    // same as before, do nothing
+    if( val == mZoom ) 
+      return ;
+    
+    unsigned char current = m4mo_read_8bit(0x02, 0x01);
+        LOGD("CURRENT ZOOM = 0%x", current ) ;
+
+    unsigned char value = 0xA + ( val * 3 ) ;
+    	if((value < 0xA) || (value > 0xFA))
+	{
+		LOGE("Error, Zoom Value is out of range!.");
+		return;
+	}
+    	m4mo_write_8bit(0x02, 0x01, value); 
+	//mdelay(30);
+	usleep( 30000 ) ;
+    mZoom = val ;
 }
 
 void QualcommCameraHardware::setWhiteBalance()
 {
     int32_t value = getParm("whitebalance", whitebalance);
+    
+    // same as before, do nothing
+    if( value == mWhiteBalance ) 
+      return ;
+    
     if (value != NOT_FOUND) {
       switch( value ) {
 	case CAMERA_WB_AUTO :
@@ -2253,6 +2617,7 @@ void QualcommCameraHardware::setWhiteBalance()
 	  m4mo_write_8bit(0x06, 0x03, 0x05);
 	  break ;	  
       }
+      mWhiteBalance = value ;
     }
 }
 
@@ -2339,7 +2704,11 @@ void QualcommCameraHardware::stopFlash()
 
 void QualcommCameraHardware::setLensToBasePosition()
 {
-  m4mo_write_8bit( 0x0a, 0x10, 0x01 ) ;
+  if( mParameters.getInt("focus-mode") == M4MO_AF_NORMAL ) {
+      m4mo_write_8bit( 0x0a, 0x10, 0x01 ) ;
+  } else {
+    m4mo_write_8bit( 0x0a, 0x10, 0x01 ) ;
+  }
   
 // Give it some time ( like donut kernel logs )
   usleep(200*1000);	  

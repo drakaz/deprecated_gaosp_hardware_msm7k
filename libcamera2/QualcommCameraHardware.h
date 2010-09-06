@@ -49,6 +49,45 @@ extern "C" {
 #define AF_MODE_AUTO 2
 #define CAMERA_AUTO_FOCUS_CANCEL 204 //1 //204
 
+#define M4MO_ISO_AUTO					1
+#define M4MO_ISO_50					2
+#define M4MO_ISO_100					3
+#define M4MO_ISO_200					4
+#define M4MO_ISO_400					5
+#define M4MO_ISO_800					6
+#define M4MO_ISO_1000					7
+
+#define M4MO_AF_NORMAL 	1
+#define M4MO_AF_MACRO  	2
+
+#define M4MO_CONTRAST_MINUS_2		2
+#define M4MO_CONTRAST_MINUS_1		3
+#define M4MO_CONTRAST_DEFAULT		4
+#define M4MO_CONTRAST_PLUS_1			5
+#define M4MO_CONTRAST_PLUS_2			6
+
+#define M4MO_SATURATION_MINUS_2		2
+#define M4MO_SATURATION_MINUS_1		3
+#define M4MO_SATURATION_DEFAULT		4
+#define M4MO_SATURATION_PLUS_1		5
+#define M4MO_SATURATION_PLUS_2		6
+
+#define M4MO_SHARPNESS_MINUS_2		2
+#define M4MO_SHARPNESS_MINUS_1		3
+#define M4MO_SHARPNESS_DEFAULT		4
+#define M4MO_SHARPNESS_PLUS_1		5
+#define M4MO_SHARPNESS_PLUS_2		6
+
+#define M4MO_EV_MINUS_4				1
+#define M4MO_EV_MINUS_3				2
+#define M4MO_EV_MINUS_2				3
+#define M4MO_EV_MINUS_1				4
+#define M4MO_EV_DEFAULT				5
+#define M4MO_EV_PLUS_1					6
+#define M4MO_EV_PLUS_2					7
+#define M4MO_EV_PLUS_3					8
+#define M4MO_EV_PLUS_4					9
+
 typedef enum
 {
     CAMERA_WB_MIN_MINUS_1,
@@ -317,10 +356,11 @@ private:
     
     void m4mo_write_8bit( char category, char byte, char value ) ;	    
     unsigned char m4mo_read_8bit( char category, char byte ) ;
-    
     bool m4mo_wait_for_value( char category, char byte, char value, int nbtry ) ;
-    
     void m4mo_get_firmware_version() ;
+    bool m4mo_switch_to_param_mode() ;
+    void m4mo_switch_to_monitor_mode() ;
+    
     friend void *jpeg_encoder_thread( void *user ) ;
     void runJpegEncodeThread(void *data) ;
     
@@ -344,7 +384,25 @@ private:
     void setAntibanding();
     void setEffect();
     void setWhiteBalance();
-
+    void setZoom() ;
+    void setIso() ;
+    void setExposure() ;
+    void setSharpness() ;
+    void setSaturation() ;
+    void setContrast() ;
+    
+    int mEffect ;
+    int mWhiteBalance ;
+    int mZoom ;
+    int mIso ;
+    int mFocusMode ;
+    
+    int mContrast ;
+    int mBrightness ;
+    int mExposure ;
+    int mSaturation ;
+    int mSharpness ;
+    
     Mutex mLock;
     bool mReleasedRecordingFrame;
 
