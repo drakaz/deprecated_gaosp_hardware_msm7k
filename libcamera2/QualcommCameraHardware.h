@@ -60,23 +60,29 @@ extern "C" {
 #define M4MO_AF_NORMAL 	1
 #define M4MO_AF_MACRO  	2
 
-#define M4MO_CONTRAST_MINUS_2		2
-#define M4MO_CONTRAST_MINUS_1		3
-#define M4MO_CONTRAST_DEFAULT		4
-#define M4MO_CONTRAST_PLUS_1			5
-#define M4MO_CONTRAST_PLUS_2			6
-
+#define M4MO_SATURATION_MINUS_3		1
 #define M4MO_SATURATION_MINUS_2		2
 #define M4MO_SATURATION_MINUS_1		3
 #define M4MO_SATURATION_DEFAULT		4
 #define M4MO_SATURATION_PLUS_1		5
 #define M4MO_SATURATION_PLUS_2		6
+#define M4MO_SATURATION_PLUS_3		7
 
+#define M4MO_SHARPNESS_MINUS_3		1
 #define M4MO_SHARPNESS_MINUS_2		2
 #define M4MO_SHARPNESS_MINUS_1		3
 #define M4MO_SHARPNESS_DEFAULT		4
 #define M4MO_SHARPNESS_PLUS_1		5
 #define M4MO_SHARPNESS_PLUS_2		6
+#define M4MO_SHARPNESS_PLUS_3		7
+
+#define M4MO_CONTRAST_MINUS_3		1
+#define M4MO_CONTRAST_MINUS_2		2
+#define M4MO_CONTRAST_MINUS_1		3
+#define M4MO_CONTRAST_DEFAULT		4
+#define M4MO_CONTRAST_PLUS_1			5
+#define M4MO_CONTRAST_PLUS_2			6
+#define M4MO_CONTRAST_PLUS_3			7
 
 #define M4MO_EV_MINUS_4				1
 #define M4MO_EV_MINUS_3				2
@@ -87,6 +93,10 @@ extern "C" {
 #define M4MO_EV_PLUS_2					7
 #define M4MO_EV_PLUS_3					8
 #define M4MO_EV_PLUS_4					9
+
+#define M4MO_PHOTOMETRY_AVERAGE		1
+#define M4MO_PHOTOMETRY_CENTER		2
+#define M4MO_PHOTOMETRY_SPOT			3
 
 typedef enum
 {
@@ -390,6 +400,7 @@ private:
     void setSharpness() ;
     void setSaturation() ;
     void setContrast() ;
+    void setAutoExposure() ;
     
     int mEffect ;
     int mWhiteBalance ;
@@ -402,6 +413,7 @@ private:
     int mExposure ;
     int mSaturation ;
     int mSharpness ;
+    int mAutoExposure ;
     
     Mutex mLock;
     bool mReleasedRecordingFrame;

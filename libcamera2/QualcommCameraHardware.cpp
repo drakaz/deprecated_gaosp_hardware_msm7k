@@ -219,6 +219,13 @@ static const str_map focusmode[] = {
 } ;
 static char *focusmode_values ;
 
+static const str_map autoexposure[] = {
+    { "meter-average",	M4MO_PHOTOMETRY_AVERAGE },
+    { "meter-center",	M4MO_PHOTOMETRY_CENTER },
+    { "meter-spot",	M4MO_PHOTOMETRY_SPOT },
+    { NULL, 0 }
+} ;
+static char *autoexposure_values ;
 
 static const str_map contrast[] = {
     { "0.0",	M4MO_CONTRAST_MINUS_2 },
@@ -365,6 +372,7 @@ void QualcommCameraHardware::initDefaultParameters()
     p.set("flash-mode", "auto") ;
     p.set("iso", "auto");
     p.set("focus-mode", "normal") ;
+    p.set("meter-mode", "meter-center") ;
 #if 0
     p.set("gps-timestamp", "1199145600"); // Jan 1, 2008, 00:00:00
     p.set("gps-latitude", "37.736071"); // A little house in San Francisco
@@ -383,19 +391,21 @@ void QualcommCameraHardware::initDefaultParameters()
     INIT_VALUES_FOR(saturation);
     INIT_VALUES_FOR(sharpness);
     INIT_VALUES_FOR(exposure);
-
+    INIT_VALUES_FOR(autoexposure);
     
     p.set("antibanding-values", antibanding_values);
     p.set("effect-values", effect_values);
     p.set("whitebalance-values", whitebalance_values);
     p.set("iso-values", iso_values ) ;
-    p.set("focus-mode-values", focusmode_values ) ;
+    p.set("focus-mode-values", focusmode_values ) ;    
+    p.set("meter-mode-values", autoexposure_values ) ;
+    
     
     p.set("picture-size-values", "2560x1920,2048x1536,1600x1200,1024x768");
     p.set("preview-size-values", "384x288");
     p.set("flash-mode-values", "off,auto,on") ;
-    
-    p.set("focus-mode","normal");
+
+; 
     
     p.set("zoom-ratios", "100,114,131,151,174,200,214,231,251,274,300") ;
     p.set("zoom-supported", "true") ;
@@ -432,6 +442,8 @@ void QualcommCameraHardware::initDefaultParameters()
     mSaturation = 3 ;
     mSharpness = 3 ;
     mExposure = 5 ;
+    mAutoExposure = 2 ;
+    
     if (setParameters(p) != NO_ERROR) {
         LOGE("Failed to set default parameters?!");
     }
@@ -1891,7 +1903,8 @@ status_t QualcommCameraHardware::setParameters(
       setExposure() ;
       setSharpness() ;
       setSaturation() ;
-      setContrast() ;      
+      setContrast() ;  
+      setAutoExposure() ;
     }
     
     //
@@ -2367,6 +2380,34 @@ void QualcommCameraHardware::setSaturation()
       mSaturation = value ;
     }else {
       LOGE("saturation %s not found", mParameters.get("saturation") ) ;
+    }
+}
+
+void QualcommCameraHardware::setAutoExposure()
+{
+    int32_t value = getParm("meter-mode", autoexposure);
+    LOGD("autoexposure == %s", mParameters.get("meter-mode") ) ;
+    // same as before, do nothing
+    if( value == mAutoExposure ) 
+      return ;
+    
+    if( value != NOT_FOUND ) {
+      switch( value ) {
+	case M4MO_PHOTOMETRY_AVERAGE:
+	  m4mo_write_8bit(0x03, 0x01, 0x01);
+	  break;
+	case M4MO_PHOTOMETRY_CENTER:
+	  m4mo_write_8bit(0x03, 0x01, 0x03);
+	  break;
+	case M4MO_PHOTOMETRY_SPOT:
+	  m4mo_write_8bit(0x03, 0x01, 0x05);
+	  break;
+	default:
+	    LOGE("Invalid autoexposure value") ;
+      }
+      mAutoExposure = value ;
+    }else {
+      LOGE("autoexposure %s not found", mParameters.get("meter-mode") ) ;
     }
 }
 
