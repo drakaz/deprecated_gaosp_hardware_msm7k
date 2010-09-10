@@ -98,6 +98,31 @@ extern "C" {
 #define M4MO_PHOTOMETRY_CENTER		2
 #define M4MO_PHOTOMETRY_SPOT			3
 
+#define M4MO_FACE_DETECTION_OFF		1
+#define M4MO_FACE_DETECTION_ON		2
+
+#define M4MO_WDR_OFF					1
+#define M4MO_WDR_ON					2
+
+#define M4MO_ISC_STILL_OFF				1
+#define M4MO_ISC_STILL_ON				2
+#define M4MO_ISC_STILL_AUTO			3 
+#define M4MO_ISC_MOVIE_ON				4 
+
+#define M4MO_AE_LOCK_AWB_LOCK		1
+#define M4MO_AE_LOCK_AWB_UNLOCK		2
+#define M4MO_AE_UNLOCK_AWB_LOCK		3
+#define M4MO_AE_UNLOCK_AWB_UNLOCK	4
+
+#define M4MO_SCENE_AUTO			1
+#define M4MO_SCENE_SPORTS		2
+#define M4MO_SCENE_PORTRAIT		3
+#define M4MO_SCENE_LANDSCAPE		4
+#define M4MO_SCENE_NIGHT		5
+#define M4MO_SCENE_BEACH_SNOW		6
+#define M4MO_SCENE_SUNSET		7
+#define M4MO_SCENE_FIREWORK		8
+
 typedef enum
 {
     CAMERA_WB_MIN_MINUS_1,
@@ -109,6 +134,7 @@ typedef enum
     CAMERA_WB_CLOUDY_DAYLIGHT,
     CAMERA_WB_TWILIGHT,
     CAMERA_WB_SHADE,
+    CAMERA_WB_HORIZON,
     CAMERA_WB_MAX_PLUS_1
 } camera_wb_type;
 
@@ -401,6 +427,11 @@ private:
     void setSaturation() ;
     void setContrast() ;
     void setAutoExposure() ;
+    void setWideDynamicRange() ;
+    void setImageStabilizationControl() ;
+    void setFaceDetection() ;
+    void setAEWB() ;
+    void setSceneMode() ;
     
     int mEffect ;
     int mWhiteBalance ;
@@ -408,13 +439,19 @@ private:
     int mIso ;
     int mFocusMode ;
     
+    int mSceneMode ;
     int mContrast ;
     int mBrightness ;
     int mExposure ;
     int mSaturation ;
     int mSharpness ;
     int mAutoExposure ;
+    int mAEWB ;
     
+    int mWideDynamicRange ;
+    int mImageStabilizationControl ;
+    int mFaceDetection ;
+        
     Mutex mLock;
     bool mReleasedRecordingFrame;
 
