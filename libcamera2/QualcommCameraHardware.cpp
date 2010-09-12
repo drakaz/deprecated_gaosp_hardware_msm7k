@@ -259,15 +259,15 @@ static const str_map sharpness[] = {
 static char *sharpness_values ;
 
 static const str_map exposure[] = {
-    { "8",	M4MO_EV_MINUS_4 },
-    { "6",	M4MO_EV_MINUS_3 },  
-    { "4",	M4MO_EV_MINUS_2 },
-    { "2",	M4MO_EV_MINUS_1 },
+    { "-8",	M4MO_EV_MINUS_4 },
+    { "-6",	M4MO_EV_MINUS_3 },  
+    { "-4",	M4MO_EV_MINUS_2 },
+    { "-2",	M4MO_EV_MINUS_1 },
     { "0",	M4MO_EV_DEFAULT },
-    { "-2",	M4MO_EV_PLUS_1 },
-    { "-4",	M4MO_EV_PLUS_2 },
-    { "-6",	M4MO_EV_PLUS_3 },
-    { "-8",	M4MO_EV_PLUS_4 },
+    { "2",	M4MO_EV_PLUS_1 },
+    { "4",	M4MO_EV_PLUS_2 },
+    { "6",	M4MO_EV_PLUS_3 },
+    { "8",	M4MO_EV_PLUS_4 },
     { NULL, 0 }
 } ;
 static char *exposure_values ;
