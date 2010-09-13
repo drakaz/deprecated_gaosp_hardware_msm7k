@@ -326,6 +326,18 @@ static const str_map scenemode[] = {
 };
 static char *scenemode_values;
         
+//M4MO_SHOT_5M_SIZE ; M4MO_SHOT_3M_SIZE ; M4MO_SHOT_2M_SIZE ; M4MO_SHOT_1024_768_SIZE
+//2560x1920,2048x1536,1600x1200,1024x768
+static const str_map picturesize[] = {
+    { "2560x1920",  	M4MO_SHOT_5M_SIZE },
+    { "2048x1536",  	M4MO_SHOT_3M_SIZE },
+    { "1600x1200",  	M4MO_SHOT_2M_SIZE },
+    { "1024x768",  	M4MO_SHOT_1024_768_SIZE },
+    { NULL, 0 }
+};
+static char *picturesize_values;
+        
+        
 // round to the next power of two
 static inline unsigned clp2(unsigned x)
 {
@@ -444,6 +456,8 @@ void QualcommCameraHardware::initDefaultParameters()
     INIT_VALUES_FOR(isc);
     INIT_VALUES_FOR(aewb);
     INIT_VALUES_FOR(scenemode) ;
+    INIT_VALUES_FOR(picturesize) ;
+
     
     p.set("antibanding-values", antibanding_values);
     p.set("effect-values", effect_values);
@@ -470,7 +484,6 @@ void QualcommCameraHardware::initDefaultParameters()
     p.set("preview-size-values", "384x288");
     p.set("flash-mode-values", "off,auto,on") ;
 
-; 
     
     p.set("zoom-ratios", "100,114,131,151,174,200,214,231,251,274,300") ;
     p.set("zoom-supported", "true") ;
@@ -1068,8 +1081,8 @@ void QualcommCameraHardware::runJpegEncodeThread(void *data)
 //      writeToMemory( buffer, 2560, 1920, (unsigned char *)mJpegHeap->mHeap->base(), (int *)&mJpegSize ) ;
       
       LOGD("mJpegSize %d" , mJpegSize ) ;
-      memcpy( mJpegHeap->mHeap->base(), mRawHeap->mHeap->base(),  2097152) ;
-      mJpegSize = 2097152 ;
+      memcpy( mJpegHeap->mHeap->base(), mRawHeap->mHeap->base(),  mJpegSize) ;
+     // mJpegSize = 2097152 ;
       receiveJpegPicture();
   
 }
@@ -1516,10 +1529,9 @@ status_t QualcommCameraHardware::startPreviewInternal()
     
     //Emit m4mo ioctl found in donut log
     m4mo_write_8bit( 0x0c, 0x08, 0x62 ) ;
-
-    //if( mFocused ) 
-      setLensToBasePosition() ;
-
+    setLensToBasePosition() ;
+    applySettings() ;
+      
     LOGD("startPreview X");
     return NO_ERROR;
 }
@@ -1820,7 +1832,31 @@ void QualcommCameraHardware::runSnapshotThread(void *data)
     
 	m4mo_write_8bit( 0x0c, 0x00, 0x00 ) ;
 	m4mo_write_8bit( 0x02, 0x00, 0x08 ) ;
-	m4mo_write_8bit( 0x02, 0x04, 0x06 ) ;
+	
+	// Requested image size ;
+	int32_t value = getParm("picture-size", picturesize) ;
+	if( value != NOT_FOUND ) {
+	  switch( value ) {
+	    case M4MO_SHOT_3M_SIZE :
+	      LOGD("requested 3M picture") ;
+	      m4mo_write_8bit( 0x02, 0x04, 0x05 ) ;
+	      break ;
+	    case M4MO_SHOT_2M_SIZE :
+	      LOGD("requested 2M picture") ;
+	      m4mo_write_8bit( 0x02, 0x04, 0x04 ) ;
+	      break ;	    
+	    case M4MO_SHOT_1024_768_SIZE :
+	      LOGD("requested 1M picture") ;
+	      m4mo_write_8bit( 0x02, 0x04, 0x16 ) ;
+	      break ;	   
+	    case M4MO_SHOT_5M_SIZE :
+	    default:
+	      LOGD("requested 5M picture") ;
+	      m4mo_write_8bit( 0x02, 0x04, 0x06 ) ;
+	  }
+	  
+	}
+	
 	m4mo_write_8bit( 0x02, 0x25, 0x01 ) ;
 	m4mo_write_8bit( 0x00, 0x11, 0x08 ) ;
 	m4mo_write_8bit( 0x00, 0x12, 0x01 ) ;
@@ -1984,23 +2020,7 @@ status_t QualcommCameraHardware::setParameters(
 
     //setAntibanding();
     if( mCameraRunning ) { 
-      setEffect();
-      setWhiteBalance();
-      setZoom() ;
-      setIso() ;
-      setExposure() ;
-      setSharpness() ;
-      setSaturation() ;
-      setContrast() ;  
-      setAutoExposure() ;
-      
-      setFaceDetection() ;
-      setWideDynamicRange() ;      
-      setImageStabilizationControl() ;
-      
-      setAEWB() ;
-      
-      setSceneMode() ;
+	applySettings(); 
     }
     
     //
@@ -2009,6 +2029,27 @@ status_t QualcommCameraHardware::setParameters(
     LOGD("setParameters: X");
     return NO_ERROR ;
 }
+
+
+void QualcommCameraHardware::applySettings()
+{
+      setFocusMode() ;
+      setEffect();
+      setWhiteBalance();
+      setZoom() ;
+      setIso() ;
+      setExposure() ;
+      setSharpness() ;
+      setSaturation() ;
+      setContrast() ;  
+      setAutoExposure() ;      
+      setFaceDetection() ;
+      setWideDynamicRange() ;      
+      setImageStabilizationControl() ;
+      setAEWB() ;
+      setSceneMode() ;
+}
+
 
 CameraParameters QualcommCameraHardware::getParameters() const
 {
@@ -2246,7 +2287,11 @@ void QualcommCameraHardware::receiveRawPicture()
 	unsigned char r2  = m4mo_read_8bit( 0x0c, 0x11 ) ;
 	unsigned char r3  = m4mo_read_8bit( 0x0c, 0x12 ) ;
 	unsigned char r4  = m4mo_read_8bit( 0x0c, 0x13 ) ;
-        
+	
+	int size = (r1<<24) + (r2<<16) + (r3<<8) + r4 ;
+        LOGD("Capture Image Size == %d" , size ) ;
+	mJpegSize = size ;
+	
 	char r5  = m4mo_read_8bit( 0x00, 0x01 ) ;
 	char r6  = m4mo_read_8bit( 0x00, 0x02 ) ;
 	
@@ -2279,7 +2324,7 @@ void QualcommCameraHardware::receiveRawPicture()
     else LOGD("Raw-picture callback was canceled--skipping.");
 
     if (mMsgEnabled & CAMERA_MSG_COMPRESSED_IMAGE) {
-        mJpegSize = 0;
+       // mJpegSize = 0;
         if (LINK_jpeg_encoder_init()) {
             if(native_jpeg_encode()) {
                 LOGD("receiveRawPicture: X (success)");
@@ -2291,6 +2336,7 @@ void QualcommCameraHardware::receiveRawPicture()
     }
     else LOGD("JPEG callback is NULL, not encoding image.");
     deinitRaw();
+    
     LOGD("receiveRawPicture: X");
 }
 
@@ -2547,6 +2593,18 @@ void QualcommCameraHardware::setImageStabilizationControl()
     }else {
       LOGE("image-stabilization-control %s not found", mParameters.get("image-stabilization-control") ) ;
     }
+}
+
+void QualcommCameraHardware::setFocusMode()
+{
+    int32_t value = getParm("focus-mode", focusmode );
+    if( value == mFocusMode ) 
+      return ;
+    if( value != NOT_FOUND ) {
+      mFocusMode = value ;
+      setLensToBasePosition() ;
+    }
+    
 }
 
 void QualcommCameraHardware::setFaceDetection()
@@ -2907,12 +2965,13 @@ void QualcommCameraHardware::setSceneMode()
     if (value != NOT_FOUND) {
       switch( value ) {
 	case M4MO_SCENE_AUTO :
-	  mFocusMode = M4MO_AF_NORMAL ;
+	  mParameters.set("focus-mode", "normal") ;
+	  setFocusMode() ;
 	 
-	  mFaceDetection = M4MO_FACE_DETECTION_OFF ;
+	  mParameters.set("face-detection", "off") ;
 	  setFaceDetection() ;
 	  
-	  mAutoExposure = M4MO_PHOTOMETRY_CENTER ;
+	  mParameters.set("meter-mode", "meter-center") ;
 	  setAutoExposure() ;
 	  
 	  m4mo_write_8bit(0x03, 0x0A, 0x00);
@@ -2920,23 +2979,24 @@ void QualcommCameraHardware::setSceneMode()
 	  m4mo_write_8bit(0x03, 0x02, 0x13);
 	  m4mo_write_8bit(0x03, 0x09, 0x03);
 	  
-	  mWhiteBalance = CAMERA_WB_AUTO ;
+	  mParameters.set("whitebalance", "auto") ;
 	  setWhiteBalance() ;
-	  mSaturation = M4MO_SATURATION_DEFAULT ;
+	  mParameters.set("saturation", "7.5") ;
 	  setSaturation() ;
-	  mSharpness = M4MO_SHARPNESS_DEFAULT ;
+	  mParameters.set("sharpness", "15.0") ;	 
 	  setSharpness() ;
 	  m4mo_write_8bit(0x03, 0x05, 0x00);
-	  mIso = M4MO_ISO_AUTO ;
+	  mParameters.set("iso", "auto") ;
 	  setIso() ;
 	  break;
 	case M4MO_SCENE_PORTRAIT :
-	  mFocusMode = M4MO_AF_NORMAL ;
+	  mParameters.set("focus-mode", "normal") ;
+	  setFocusMode() ;
 	 
-	  mFaceDetection = M4MO_FACE_DETECTION_ON ;
+	  mParameters.set("face-detection", "on") ;
 	  setFaceDetection() ;
 	  
-	  mAutoExposure = M4MO_PHOTOMETRY_CENTER ;
+	  mParameters.set("meter-mode", "meter-center") ;
 	  setAutoExposure() ;
 	  
 	  m4mo_write_8bit(0x03, 0x0A, 0x01);
@@ -2944,22 +3004,24 @@ void QualcommCameraHardware::setSceneMode()
 	  m4mo_write_8bit(0x03, 0x02, 0x13);
 	  m4mo_write_8bit(0x03, 0x09, 0x03);
 	  
-	  mWhiteBalance = CAMERA_WB_AUTO ;
+	  mParameters.set("whitebalance", "auto") ;
 	  setWhiteBalance() ;
-	  mSaturation = M4MO_SATURATION_DEFAULT ;
+	  mParameters.set("saturation", "7.5") ;
 	  setSaturation() ;
-	  mSharpness = M4MO_SHARPNESS_MINUS_1 ;
+	  mParameters.set("sharpness", "5.0") ;	 
 	  setSharpness() ;
-	  mIso = M4MO_ISO_AUTO ;
-	  setIso() ;
+	  m4mo_write_8bit(0x03, 0x05, 0x00);
+	  mParameters.set("iso", "auto") ;
+	  setIso() ;	  
 	  break;	
 	case M4MO_SCENE_LANDSCAPE :
-	  mFocusMode = M4MO_AF_NORMAL ;
+	  mParameters.set("focus-mode", "normal") ;
+	  setFocusMode() ;
 	 
-	  mFaceDetection = M4MO_FACE_DETECTION_OFF ;
+	  mParameters.set("face-detection", "off") ;
 	  setFaceDetection() ;
 	  
-	  mAutoExposure = M4MO_PHOTOMETRY_AVERAGE ;
+	  mParameters.set("meter-mode", "meter-average") ;
 	  setAutoExposure() ;
 	  
 	  m4mo_write_8bit(0x03, 0x0A, 0x02);
@@ -2967,22 +3029,24 @@ void QualcommCameraHardware::setSceneMode()
 	  m4mo_write_8bit(0x03, 0x02, 0x13);
 	  m4mo_write_8bit(0x03, 0x09, 0x03);
 	  
-	  mWhiteBalance = CAMERA_WB_AUTO ;
+	  mParameters.set("whitebalance", "auto") ;
 	  setWhiteBalance() ;
-	  mSaturation = M4MO_SATURATION_PLUS_1 ;
+	  mParameters.set("saturation", "7.5") ;
 	  setSaturation() ;
-	  mSharpness = M4MO_SHARPNESS_PLUS_1 ;
+	  mParameters.set("sharpness", "15.0") ;	 
 	  setSharpness() ;
-	  mIso = M4MO_ISO_AUTO ;
-	  setIso() ;
+	  m4mo_write_8bit(0x03, 0x05, 0x00);
+	  mParameters.set("iso", "auto") ;
+	  setIso() ;		  
 	  break;		  
 	case M4MO_SCENE_BEACH_SNOW :
-	  mFocusMode = M4MO_AF_NORMAL ;
+	  mParameters.set("focus-mode", "normal") ;
+	  setFocusMode() ;
 	 
-	  mFaceDetection = M4MO_FACE_DETECTION_OFF ;
+	  mParameters.set("face-detection", "off") ;
 	  setFaceDetection() ;
 	  
-	  mAutoExposure = M4MO_PHOTOMETRY_CENTER ;
+	  mParameters.set("meter-mode", "meter-center") ;
 	  setAutoExposure() ;
 	  
 	  m4mo_write_8bit(0x03, 0x0A, 0x05);
@@ -2990,22 +3054,24 @@ void QualcommCameraHardware::setSceneMode()
 	  m4mo_write_8bit(0x03, 0x02, 0x13);
 	  m4mo_write_8bit(0x03, 0x09, 0x04);
 	  
-	  mWhiteBalance = CAMERA_WB_AUTO ;
+	  mParameters.set("whitebalance", "auto") ;
 	  setWhiteBalance() ;
-	  mSaturation = M4MO_SATURATION_PLUS_1 ;
+	  mParameters.set("saturation", "7.5") ;
 	  setSaturation() ;
-	  mSharpness = M4MO_SHARPNESS_DEFAULT ;
+	  mParameters.set("sharpness", "10.0") ;	 
 	  setSharpness() ;
-	  mIso = M4MO_ISO_AUTO ;
-	  setIso() ;
+	  m4mo_write_8bit(0x03, 0x05, 0x00);
+	  mParameters.set("iso", "auto") ;
+	  setIso() ;		  
 	  break;	  
 	case M4MO_SCENE_SUNSET :
-	  mFocusMode = M4MO_AF_NORMAL ;
+	  mParameters.set("focus-mode", "normal") ;
+	  setFocusMode() ;
 	 
-	  mFaceDetection = M4MO_FACE_DETECTION_OFF ;
+	  mParameters.set("face-detection", "off") ;
 	  setFaceDetection() ;
 	  
-	  mAutoExposure = M4MO_PHOTOMETRY_CENTER ;
+	  mParameters.set("meter-mode", "meter-center") ;
 	  setAutoExposure() ;
 	  
 	  m4mo_write_8bit(0x03, 0x0A, 0x06);
@@ -3013,22 +3079,24 @@ void QualcommCameraHardware::setSceneMode()
 	  m4mo_write_8bit(0x03, 0x02, 0x13);
 	  m4mo_write_8bit(0x03, 0x09, 0x03);
 	  
-	  mWhiteBalance = CAMERA_WB_AUTO ;
+	  mParameters.set("whitebalance", "auto") ;
 	  setWhiteBalance() ;
-	  mSaturation = M4MO_SATURATION_DEFAULT ;
+	  mParameters.set("saturation", "5.0") ;
 	  setSaturation() ;
-	  mSharpness = M4MO_SHARPNESS_DEFAULT ;
+	  mParameters.set("sharpness", "10.0") ;	 
 	  setSharpness() ;
-	  mIso = M4MO_ISO_AUTO ;
-	  setIso() ;
+	  m4mo_write_8bit(0x03, 0x05, 0x00);
+	  mParameters.set("iso", "auto") ;
+	  setIso() ;	
 	  break;
 	case M4MO_SCENE_NIGHT :
-	  mFocusMode = M4MO_AF_NORMAL ;
+	  mParameters.set("focus-mode", "normal") ;
+	  setFocusMode() ;
 	 
-	  mFaceDetection = M4MO_FACE_DETECTION_OFF ;
+	  mParameters.set("face-detection", "off") ;
 	  setFaceDetection() ;
 	  
-	  mAutoExposure = M4MO_PHOTOMETRY_CENTER ;
+	  mParameters.set("meter-mode", "meter-center") ;
 	  setAutoExposure() ;
 	  
 	  m4mo_write_8bit(0x03, 0x0A, 0x09);
@@ -3036,22 +3104,24 @@ void QualcommCameraHardware::setSceneMode()
 	  m4mo_write_8bit(0x03, 0x02, 0x13);
 	  m4mo_write_8bit(0x03, 0x09, 0x03);
 	  
-	  mWhiteBalance = CAMERA_WB_AUTO ;
+	  mParameters.set("whitebalance", "auto") ;
 	  setWhiteBalance() ;
-	  mSaturation = M4MO_SATURATION_DEFAULT ;
+	  mParameters.set("saturation", "5.0") ;
 	  setSaturation() ;
-	  mSharpness = M4MO_SHARPNESS_DEFAULT ;
+	  mParameters.set("sharpness", "10.0") ;	 
 	  setSharpness() ;
-	  mIso = M4MO_ISO_AUTO ;
-	  setIso() ;
+	  m4mo_write_8bit(0x03, 0x05, 0x00);
+	  mParameters.set("iso", "auto") ;
+	  setIso() ;	
 	  break;	  	  	  
 	case M4MO_SCENE_FIREWORK :
-	  mFocusMode = M4MO_AF_NORMAL ;
+	  mParameters.set("focus-mode", "normal") ;
+	  setFocusMode() ;
 	 
-	  mFaceDetection = M4MO_FACE_DETECTION_OFF ;
+	  mParameters.set("face-detection", "off") ;
 	  setFaceDetection() ;
 	  
-	  mAutoExposure = M4MO_PHOTOMETRY_CENTER ;
+	  mParameters.set("meter-mode", "meter-center") ;
 	  setAutoExposure() ;
 	  
 	  m4mo_write_8bit(0x03, 0x0A, 0x0A);
@@ -3059,14 +3129,15 @@ void QualcommCameraHardware::setSceneMode()
 	  m4mo_write_8bit(0x03, 0x02, 0x13);
 	  m4mo_write_8bit(0x03, 0x09, 0x03);
 	  
-	  mWhiteBalance = CAMERA_WB_AUTO ;
+	  mParameters.set("whitebalance", "auto") ;
 	  setWhiteBalance() ;
-	  mSaturation = M4MO_SATURATION_DEFAULT ;
+	  mParameters.set("saturation", "5.0") ;
 	  setSaturation() ;
-	  mSharpness = M4MO_SHARPNESS_DEFAULT ;
+	  mParameters.set("sharpness", "10.0") ;	 
 	  setSharpness() ;
-	  mIso = M4MO_ISO_50 ;
-	  setIso() ;
+	  m4mo_write_8bit(0x03, 0x05, 0x00);
+	  mParameters.set("iso", "50") ;
+	  setIso() ;	
 	  break;	  	  	  	  
       }
     }

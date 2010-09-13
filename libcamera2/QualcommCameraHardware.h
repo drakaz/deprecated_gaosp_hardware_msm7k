@@ -123,6 +123,11 @@ extern "C" {
 #define M4MO_SCENE_SUNSET		7
 #define M4MO_SCENE_FIREWORK		8
 
+#define M4MO_SHOT_5M_SIZE 		1
+#define M4MO_SHOT_3M_SIZE 		2
+#define M4MO_SHOT_2M_SIZE 		3
+#define M4MO_SHOT_1024_768_SIZE 	4
+
 typedef enum
 {
     CAMERA_WB_MIN_MINUS_1,
@@ -417,9 +422,10 @@ private:
 
     void initDefaultParameters();
 
-    void setAntibanding();
-    void setEffect();
-    void setWhiteBalance();
+    void setFocusMode() ;
+    void setAntibanding() ;
+    void setEffect() ;
+    void setWhiteBalance() ;
     void setZoom() ;
     void setIso() ;
     void setExposure() ;
@@ -432,6 +438,9 @@ private:
     void setFaceDetection() ;
     void setAEWB() ;
     void setSceneMode() ;
+    
+    
+    void applySettings() ;
     
     int mEffect ;
     int mWhiteBalance ;
