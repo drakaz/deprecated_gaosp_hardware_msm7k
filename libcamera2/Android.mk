@@ -11,14 +11,14 @@ LOCAL_PATH:= $(call my-dir)
 
 include $(CLEAR_VARS)
 
-LOCAL_SRC_FILES:= QualcommCameraHardware.cpp
+LOCAL_SRC_FILES:= QualcommCameraHardware.cpp exifwriter.c
 
 LOCAL_CFLAGS:= -DDLOPEN_LIBMMCAMERA=$(DLOPEN_LIBMMCAMERA)
 
 LOCAL_C_INCLUDES+= \
 	vendor/qcom/proprietary/mm-camera/common \
 	vendor/qcom/proprietary/mm-camera/apps/appslib \
-	external/jpeg \
+	external/jhead \
 	vendor/qcom/proprietary/mm-camera/jpeg/inc
 
 LOCAL_SHARED_LIBRARIES:= libbinder libutils libcamera_client liblog
@@ -26,7 +26,7 @@ LOCAL_SHARED_LIBRARIES:= libbinder libutils libcamera_client liblog
 ifneq ($(DLOPEN_LIBMMCAMERA),1)
 LOCAL_SHARED_LIBRARIES+= libmmcamera libmm-qcamera-tgt
 else
-LOCAL_SHARED_LIBRARIES+= libdl
+LOCAL_SHARED_LIBRARIES+= libdl libexif
 endif
 
 LOCAL_MODULE:= libcamera

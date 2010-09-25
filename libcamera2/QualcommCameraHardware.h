@@ -60,39 +60,39 @@ extern "C" {
 #define M4MO_AF_NORMAL 	1
 #define M4MO_AF_MACRO  	2
 
-#define M4MO_SATURATION_MINUS_3		1
-#define M4MO_SATURATION_MINUS_2		2
-#define M4MO_SATURATION_MINUS_1		3
-#define M4MO_SATURATION_DEFAULT		4
-#define M4MO_SATURATION_PLUS_1		5
-#define M4MO_SATURATION_PLUS_2		6
-#define M4MO_SATURATION_PLUS_3		7
+#define M4MO_SATURATION_MINUS_3		0
+#define M4MO_SATURATION_MINUS_2		1
+#define M4MO_SATURATION_MINUS_1		2
+#define M4MO_SATURATION_DEFAULT		3
+#define M4MO_SATURATION_PLUS_1		4
+#define M4MO_SATURATION_PLUS_2		5
+#define M4MO_SATURATION_PLUS_3		6
 
-#define M4MO_SHARPNESS_MINUS_3		1
-#define M4MO_SHARPNESS_MINUS_2		2
-#define M4MO_SHARPNESS_MINUS_1		3
-#define M4MO_SHARPNESS_DEFAULT		4
-#define M4MO_SHARPNESS_PLUS_1		5
-#define M4MO_SHARPNESS_PLUS_2		6
-#define M4MO_SHARPNESS_PLUS_3		7
+#define M4MO_SHARPNESS_MINUS_3		0
+#define M4MO_SHARPNESS_MINUS_2		1
+#define M4MO_SHARPNESS_MINUS_1		2
+#define M4MO_SHARPNESS_DEFAULT		3
+#define M4MO_SHARPNESS_PLUS_1		4
+#define M4MO_SHARPNESS_PLUS_2		5
+#define M4MO_SHARPNESS_PLUS_3		6
 
-#define M4MO_CONTRAST_MINUS_3		1
-#define M4MO_CONTRAST_MINUS_2		2
-#define M4MO_CONTRAST_MINUS_1		3
-#define M4MO_CONTRAST_DEFAULT		4
-#define M4MO_CONTRAST_PLUS_1			5
-#define M4MO_CONTRAST_PLUS_2			6
-#define M4MO_CONTRAST_PLUS_3			7
+#define M4MO_CONTRAST_MINUS_3		0
+#define M4MO_CONTRAST_MINUS_2		1
+#define M4MO_CONTRAST_MINUS_1		2
+#define M4MO_CONTRAST_DEFAULT		3
+#define M4MO_CONTRAST_PLUS_1			4
+#define M4MO_CONTRAST_PLUS_2			5
+#define M4MO_CONTRAST_PLUS_3			6
 
-#define M4MO_EV_MINUS_4				1
-#define M4MO_EV_MINUS_3				2
-#define M4MO_EV_MINUS_2				3
-#define M4MO_EV_MINUS_1				4
-#define M4MO_EV_DEFAULT				5
-#define M4MO_EV_PLUS_1					6
-#define M4MO_EV_PLUS_2					7
-#define M4MO_EV_PLUS_3					8
-#define M4MO_EV_PLUS_4					9
+#define M4MO_EV_MINUS_4				-4
+#define M4MO_EV_MINUS_3				-3
+#define M4MO_EV_MINUS_2				-2
+#define M4MO_EV_MINUS_1				-1
+#define M4MO_EV_DEFAULT				0
+#define M4MO_EV_PLUS_1					1
+#define M4MO_EV_PLUS_2					2
+#define M4MO_EV_PLUS_3					3
+#define M4MO_EV_PLUS_4					4
 
 #define M4MO_PHOTOMETRY_AVERAGE		1
 #define M4MO_PHOTOMETRY_CENTER		2
@@ -171,13 +171,6 @@ typedef enum
     CAMERA_MAX_ANTIBANDING,
 } camera_antibanding_type;
 
-typedef struct
-{
-    uint32_t timestamp;  /* seconds since 1/6/1980          */
-    double   latitude;   /* degrees, WGS ellipsoid */
-    double   longitude;  /* degrees                */
-    int16_t  altitude;   /* meters                          */
-} camera_position_type;
 
 typedef struct
 {
@@ -260,7 +253,6 @@ public:
 
     void receivePreviewFrame(struct msm_frame_t *frame);
     void receiveJpegPicture(void);
-    void jpeg_set_location();
     void receiveJpegPictureFragment(uint8_t *buf, uint32_t size);
     void notifyShutter();
 

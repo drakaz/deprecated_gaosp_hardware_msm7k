@@ -21,6 +21,8 @@
 
 #include "QualcommCameraHardware.h"
 
+
+
 #include <utils/threads.h>
 #include <binder/MemoryHeapPmem.h>
 #include <utils/String16.h>
@@ -39,7 +41,8 @@
 #define UNLIKELY(exp) __builtin_expect(!!(exp), 0)
 
 extern "C" {
-
+#include "exifwriter.h"
+  
 #include <fcntl.h>
 #include <time.h>
 #include <pthread.h>
@@ -55,6 +58,7 @@ extern "C" {
 #include <sys/mman.h>
 #include <sys/time.h>
 #include <stdlib.h>
+
 #include "sec_m4mo.h"
 
 #define THUMBNAIL_WIDTH        192 //512
@@ -490,26 +494,31 @@ void QualcommCameraHardware::initDefaultParameters()
     p.set("zoom", "0" ) ;
     p.set("max-zoom", "10" ) ;
     
-    p.set("contrast-def","5") ;
-    p.set("contrast-max","10") ;
+    p.set("contrast-def","3") ;
+    p.set("contrast-max","6") ;
     p.set("contrast-min","0") ;
-    p.set("contrast", "5.0") ; 
+    p.set("contrast", "3") ;
     
 
-    p.set("exposure-compensation-step", "0.5") ;
+    p.set("exposure-compensation-step", "1") ;
     p.set("exposure-compensation", "0") ;
-    p.set("min-exposure-compensation", "-8") ; 
-    p.set("max-exposure-compensation", "8") ; 
+    p.set("min-exposure-compensation", "-4") ;
+    p.set("max-exposure-compensation", "4") ;
 	  
-    p.set("saturation-def", "5") ;
-    p.set("saturation-max", "10") ;
-    p.set("saturation-min", "1") ;
-    p.set("saturation", "7.5") ;
+    p.set("saturation-def", "3") ;
+    p.set("saturation-max", "6") ;
+    p.set("saturation-min", "0") ;
+    p.set("saturation", "3") ;
 	  
-    p.set("sharpness-def", "10") ;
+/*    p.set("sharpness-def", "10") ;
     p.set("sharpness-max", "30") ;
     p.set("sharpness-min", "0") ;
-    p.set("sharpness", "15.0") ;
+    p.set("sharpness", "15.0") ;*/
+
+        p.set("sharpness-def", "3") ;
+        p.set("sharpness-max", "6") ;
+        p.set("sharpness-min", "0") ;
+        p.set("sharpness", "3") ;
 
     mIso = M4MO_ISO_AUTO ;
     mEffect = 1 ;
@@ -891,12 +900,7 @@ bool QualcommCameraHardware::native_jpeg_encode(void)
     int rotation = mParameters.getInt("rotation");
     if (rotation >= 0) {
         LOGD("native_jpeg_encode, rotation = %d", rotation);
-//        if(!LINK_jpeg_encoder_setRotation(rotation)) {
-//            LOGE("native_jpeg_encode set rotation failed");
-//            return false;
-//        }
     }
-    jpeg_set_location();
     char jpegFileName[256] = {0};
     static int snapshotCntr = 0;
 
@@ -956,8 +960,6 @@ bool QualcommCameraHardware::native_jpeg_encode(void)
 
 bool QualcommCameraHardware::native_set_dimension(cam_ctrl_dimension_t *value)
 {
-    LOGE("native_set_dimension: length: %d.", sizeof(cam_ctrl_dimension_t));
-    LOGD("  mDimension.picture_width %d, mDimension.picture_height = %d" , value->picture_width,value->picture_height );
     return native_set_parm(CAMERA_SET_PARM_DIMENSION,
                            sizeof(cam_ctrl_dimension_t), value);
 }
@@ -967,8 +969,6 @@ bool QualcommCameraHardware::native_set_parm(
 {
     int rc = true;
     struct msm_ctrl_cmd_t ctrlCmd;
-
-LOGD("native_set_parm length == %d", length ) ;
 
     ctrlCmd.timeout_ms = 5000;
     ctrlCmd.type       = (uint16_t)type;
@@ -985,52 +985,7 @@ LOGD("native_set_parm length == %d", length ) ;
              mCameraControlFd, type, length, rc, ctrlCmd.status, strerror(errno));
         return false;
     }
-    LOGD("native_set_parm status after ioctl == %d" ,ctrlCmd.status ) ;	 
     return true;
-}
-
-void QualcommCameraHardware::jpeg_set_location()
-{
-    bool encode_location = true;
-    camera_position_type pt;
-
-#define PARSE_LOCATION(what,type,fmt,desc) do {                                \
-        pt.what = 0;                                                           \
-        const char *what##_str = mParameters.get("gps-"#what);                 \
-        LOGD("GPS PARM %s --> [%s]", "gps-"#what, what##_str);                 \
-        if (what##_str) {                                                      \
-            type what = 0;                                                     \
-            if (sscanf(what##_str, fmt, &what) == 1)                           \
-                pt.what = what;                                                \
-            else {                                                             \
-                LOGE("GPS " #what " %s could not"                              \
-                     " be parsed as a " #desc, what##_str);                    \
-                encode_location = false;                                       \
-            }                                                                  \
-        }                                                                      \
-        else {                                                                 \
-            LOGD("GPS " #what " not specified: "                               \
-                 "defaulting to zero in EXIF header.");                        \
-            encode_location = false;                                           \
-       }                                                                       \
-    } while(0)
-
-    PARSE_LOCATION(timestamp, long, "%ld", "long");
-    if (!pt.timestamp) pt.timestamp = time(NULL);
-    PARSE_LOCATION(altitude, short, "%hd", "short");
-    PARSE_LOCATION(latitude, double, "%lf", "double float");
-    PARSE_LOCATION(longitude, double, "%lf", "double float");
-
-#undef PARSE_LOCATION
-
-    if (encode_location) {
-        LOGD("setting image location ALT %d LAT %lf LON %lf",
-             pt.altitude, pt.latitude, pt.longitude);
-        if (!LINK_jpeg_encoder_setLocation(&pt)) {
-            LOGE("jpeg_set_location: LINK_jpeg_encoder_setLocation failed.");
-        }
-    }
-    else LOGD("not setting image location");
 }
 
 void QualcommCameraHardware::runFrameThread(void *data)
@@ -1080,11 +1035,60 @@ void QualcommCameraHardware::runJpegEncodeThread(void *data)
 //     readFromMemory( (unsigned char *)mRawHeap->mHeap->base(), 2097152, buffer ) ;
 //      writeToMemory( buffer, 2560, 1920, (unsigned char *)mJpegHeap->mHeap->base(), (int *)&mJpegSize ) ;
       
+      
+    int rotation = mParameters.getInt("rotation");
+    LOGD("native_jpeg_encode, rotation = %d", rotation);
+    
+         bool encode_location = true;
+	camera_position_type pt;
+
+#define PARSE_LOCATION(what,type,fmt,desc) do { \
+pt.what = 0; \
+const char *what##_str = mParameters.get("gps-"#what); \
+LOGD("GPS PARM %s --> [%s]", "gps-"#what, what##_str); \
+if (what##_str) { \
+type what = 0; \
+if (sscanf(what##_str, fmt, &what) == 1) \
+pt.what = what; \
+else { \
+LOGE("GPS " #what " %s could not" \
+" be parsed as a " #desc, what##_str); \
+encode_location = false; \
+} \
+} \
+else { \
+LOGD("GPS " #what " not specified: " \
+"defaulting to zero in EXIF header."); \
+encode_location = false; \
+} \
+} while(0)
+
+    PARSE_LOCATION(timestamp, long, "%ld", "long");
+    if (!pt.timestamp) pt.timestamp = time(NULL);
+    PARSE_LOCATION(altitude, short, "%hd", "short");
+    PARSE_LOCATION(latitude, double, "%lf", "double float");
+    PARSE_LOCATION(longitude, double, "%lf", "double float");
+
+#undef PARSE_LOCATION
+
+    if (encode_location) {
+        LOGD("setting image location ALT %d LAT %lf LON %lf",
+             pt.altitude, pt.latitude, pt.longitude);
+    }
+    else {
+      LOGV("not setting image location");
+      
+    }
+    
       LOGD("mJpegSize %d" , mJpegSize ) ;
-      memcpy( mJpegHeap->mHeap->base(), mRawHeap->mHeap->base(),  mJpegSize) ;
-     // mJpegSize = 2097152 ;
+      
+ camera_position_type *npt = &pt ;
+ if( ! encode_location ) {
+   npt = NULL ;
+ }
+    writeExif( mRawHeap->mHeap->base(), mJpegHeap->mHeap->base(), mJpegSize, &mJpegSize, rotation , npt ) ;
+
       receiveJpegPicture();
-  
 }
 
 void *frame_thread(void *user)
@@ -1233,7 +1237,6 @@ void QualcommCameraHardware::deinitPreview(void)
 //             strerror(errno));
 
 	  
-LOGD("before camframe_terminate ")  ;
     int rc = LINK_camframe_terminate() ;
   
     LOGD("camframe terminate rc = %d", rc ) ;
@@ -1489,18 +1492,12 @@ sp<IMemoryHeap> QualcommCameraHardware::getRawHeap() const
 sp<IMemoryHeap> QualcommCameraHardware::getPreviewHeap() const
 {
     LOGD("getPreviewHeap");
-    if( mPreviewHeap != NULL ) {
-	LOGD("previewHeap not null") ;
-    }
     return mPreviewHeap != NULL ? mPreviewHeap->mHeap : NULL;
 }
 
 sp<IMemoryHeap> QualcommCameraHardware::getPreviewHeap(int32_t i) const
 {
-    LOGD("getPreviewHeap");
-    if( mPreviewHeap != NULL ) {
-	LOGD("previewHeap not null") ;
-    }
+    LOGD("getPreviewHeap(%d)", i );
     return mPreviewHeap != NULL ? mPreviewHeap->mHeapnew[i] : NULL;
 }
 
@@ -1528,6 +1525,7 @@ status_t QualcommCameraHardware::startPreviewInternal()
     }
     
     //Emit m4mo ioctl found in donut log
+    // JPEG Quality == Super fine 
     m4mo_write_8bit( 0x0c, 0x08, 0x62 ) ;
     setLensToBasePosition() ;
     applySettings() ;
@@ -1945,7 +1943,6 @@ status_t QualcommCameraHardware::takePicture()
 status_t QualcommCameraHardware::cancelPicture()
 {
     LOGD("cancelPicture: EX");
-
     return NO_ERROR;
 }
 
@@ -1954,10 +1951,6 @@ status_t QualcommCameraHardware::setParameters(
 {
     LOGD("setParameters: E params = %p", &params);
 
-    LOGD("dump param ") ;
-    params.dump() ;
-    LOGD("dump done") ;
-    
     Mutex::Autolock l(&mLock);
 
     // Set preview size.
@@ -2408,13 +2401,13 @@ int QualcommCameraHardware::getParm(
 
 void QualcommCameraHardware::setExposure()
 {
-      int32_t value = getParm("exposure-compensation", exposure);
+      int32_t value = mParameters.getInt("exposure-compensation");
 LOGD("exposure == %s", mParameters.get("exposure-compensation") ) ;
     // same as before, do nothing
     if( value == mExposure ) 
       return ;
-    if( value != NOT_FOUND ) {    
-      switch( value ) {
+
+    switch( value ) {
 	case M4MO_EV_MINUS_4:
 	  m4mo_write_8bit(0x06, 0x04, 0xFC);
 	  break;
@@ -2441,25 +2434,28 @@ LOGD("exposure == %s", mParameters.get("exposure-compensation") ) ;
 	  break;
 	case M4MO_EV_PLUS_4:
 	  m4mo_write_8bit(0x06, 0x04, 0x04);
-	  break;		  
+	  break;
+	default:
+		LOGV("Invalid exposure-compensation value %d", value ) ;
+		return ;
       }
       mExposure = value ;
-    }else {
-      LOGE("exposure %s not found", mParameters.get("exposure-compensation") ) ;
-    }
 }
 
 
 void QualcommCameraHardware::setSharpness()
 {
-      int32_t value = getParm("sharpness", sharpness);
+      int32_t value = mParameters.getInt("sharpness");
 LOGD("sharpness == %s", mParameters.get("sharpness")) ;
     // same as before, do nothing
     if( value == mSharpness ) 
       return ;
-    if( value != NOT_FOUND ) {    
       switch( value ) {
-	case M4MO_SHARPNESS_MINUS_2:
+    case M4MO_SHARPNESS_MINUS_3:
+		m4mo_write_8bit(0x02, 0x11, 0x1C);
+		m4mo_write_8bit(0x02, 0x12, 0x00);
+		break;
+    case M4MO_SHARPNESS_MINUS_2:
 	  m4mo_write_8bit(0x02, 0x11, 0x3E);
 	  m4mo_write_8bit(0x02, 0x12, 0x00);
 	  break;
@@ -2479,23 +2475,30 @@ LOGD("sharpness == %s", mParameters.get("sharpness")) ;
 	  m4mo_write_8bit(0x02, 0x11, 0xC2);
 	  m4mo_write_8bit(0x02, 0x12, 0x00);
 	  break;	
+	case M4MO_SHARPNESS_PLUS_3:
+	  m4mo_write_8bit(0x02, 0x11, 0xE4);
+	  m4mo_write_8bit(0x02, 0x12, 0x00);
+	  break;
+	default:
+	  LOGV("Invalid sharpness value %d" , value ) ;
+	  return ;
       }
       mSharpness = value ;
-    } else {
-      LOGE("sharpness %s not found", mParameters.get("sharpness") ) ;
-    }
 }
 
 void QualcommCameraHardware::setSaturation()
 {
-    int32_t value = getParm("saturation", saturation);
+    int32_t value = mParameters.getInt("saturation");
  LOGD("saturation == %s", mParameters.get("saturation") ) ;
     // same as before, do nothing
     if( value == mSaturation ) 
       return ;
     
-    if( value != NOT_FOUND ) {
       switch( value ) {
+  	case M4MO_SATURATION_MINUS_3:
+  	  m4mo_write_8bit(0x02, 0x0F, 0x1C);
+  	  m4mo_write_8bit(0x02, 0x10, 0x00);
+  	  break;
 	case M4MO_SATURATION_MINUS_2:
 	  m4mo_write_8bit(0x02, 0x0F, 0x3E);
 	  m4mo_write_8bit(0x02, 0x10, 0x00);
@@ -2516,13 +2519,16 @@ void QualcommCameraHardware::setSaturation()
 	  m4mo_write_8bit(0x02, 0x0F, 0xC2);
 	  m4mo_write_8bit(0x02, 0x10, 0x00);
 	  break;
+	case M4MO_SATURATION_PLUS_3:
+	  m4mo_write_8bit(0x02, 0x0F, 0xE4);
+	  m4mo_write_8bit(0x02, 0x10, 0x00);
+	  break;
 	default:
-	    LOGE("Invalid contrast value") ;
+	  LOGE("Invalid contrast value %d", saturation) ;
+	  return ;
       }
       mSaturation = value ;
-    }else {
-      LOGE("saturation %s not found", mParameters.get("saturation") ) ;
-    }
+
 }
 
 void QualcommCameraHardware::setWideDynamicRange()
@@ -2699,16 +2705,18 @@ void QualcommCameraHardware::setAutoExposure()
 
 void QualcommCameraHardware::setContrast()
 {
-    int32_t value = getParm("contrast", contrast);
+    int32_t value = mParameters.getInt("contrast");
     LOGD("contrast == %s", mParameters.get("contrast") ) ;
     // same as before, do nothing
     if( value == mContrast ) 
       return ;
     
-    if( value != NOT_FOUND ) {
       m4mo_switch_to_param_mode() ;
       switch( value ) {
-	case M4MO_CONTRAST_MINUS_2:
+  	case M4MO_CONTRAST_MINUS_3:
+  	  m4mo_write_8bit(0x01, 0x04, 0x1C);
+  	  break;
+    case M4MO_CONTRAST_MINUS_2:
 	  m4mo_write_8bit(0x01, 0x04, 0x3E);
 	  break;
 	case M4MO_CONTRAST_MINUS_1:
@@ -2723,14 +2731,16 @@ void QualcommCameraHardware::setContrast()
 	case M4MO_CONTRAST_PLUS_2:
 	  m4mo_write_8bit(0x01, 0x04, 0xC2);
 	  break;
+	case M4MO_CONTRAST_PLUS_3:
+	  m4mo_write_8bit(0x01, 0x04, 0xE4);
+	  break;
 	default:
-	    LOGE("Invalid contrast value") ;
+	    LOGE("Invalid contrast value %d", value) ;
+	    return ;
       }
       mContrast = value ;
       m4mo_switch_to_monitor_mode() ;
-    }else {
-      LOGE("contrast %s not found", mParameters.get("contrast") ) ;
-    }
+
 }
 
 void QualcommCameraHardware::setIso()
@@ -3538,7 +3548,6 @@ static bool register_buf(int camfd,
 {
     struct msm_pmem_info_t pmemBuf;
 
-    LOGD("register_buf E" ) ;
     pmemBuf.type     = pmem_type;
     pmemBuf.fd       = pmempreviewfd;
     //pmemBuf.offset   = offset;
@@ -3567,7 +3576,6 @@ static bool register_buf(int camfd,
              strerror(errno));
         return false;
     }
-    LOGD("register_buf X") ;
     return true;
 }
 
