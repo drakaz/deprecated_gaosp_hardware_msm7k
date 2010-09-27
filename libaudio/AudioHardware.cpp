@@ -16,7 +16,7 @@
 
 #include <math.h>
 
-//#define LOG_NDEBUG 0
+#define LOG_NDEBUG 1
 #define LOG_TAG "AudioHardwareMSM72XX"
 #include <utils/Log.h>
 #include <utils/String8.h>
@@ -504,16 +504,16 @@ status_t AudioHardware::doAudioRouteOrMute(uint32_t device)
         }
     }
 
-    LOGI("doAudioRouteOrMute() device %x, mMode %d, mMicMute %d", device, mMode, mMicMute);
+	if (LOG_NDEBUG) {
+		LOGI("doAudioRouteOrMute() device %x, mMode %d, mMicMute %d", device, mMode, mMicMute);
+	}
     return do_route_audio_rpc(device,
-                               mMode != AudioSystem::MODE_IN_CALL, 
+                  mMode != AudioSystem::MODE_IN_CALL, 
  			      mMode != AudioSystem::MODE_IN_CALL ? mMicMute : false);
 }
 
 status_t AudioHardware::doRouting()
 {
-
-
     Mutex::Autolock lock(mLock);
     uint32_t outputDevices = mOutput->devices();
     status_t ret = NO_ERROR;
@@ -529,20 +529,19 @@ status_t AudioHardware::doRouting()
             LOGI("Routing audio to Bluetooth PCM\n");
             sndDevice = SND_DEVICE_BT;
         } else if (inputDevice & AudioSystem::DEVICE_IN_WIRED_HEADSET) {
-            if ((outputDevices & AudioSystem::DEVICE_OUT_WIRED_HEADSET) &&
-                (outputDevices & AudioSystem::DEVICE_OUT_SPEAKER)) {       
-                LOGI("Routing audio to Wired Headset and Speaker\n");
-                    sndDevice = SND_DEVICE_HEADSET_AND_SPEAKER;
-                    audProcess = (ADRC_ENABLE | EQ_ENABLE | RX_IIR_ENABLE);
+            if ((outputDevices & AudioSystem::DEVICE_OUT_WIRED_HEADSET) && (outputDevices & AudioSystem::DEVICE_OUT_SPEAKER)) {       
+				LOGI("Routing audio to Wired Headset and Speaker\n");
+                sndDevice = SND_DEVICE_HEADSET_AND_SPEAKER;
+                audProcess = (ADRC_ENABLE | EQ_ENABLE | RX_IIR_ENABLE);
             } else {
                 LOGI("Routing audio to Wired Headset\n");
                 sndDevice = SND_DEVICE_HEADSET;
             }
         } else {
             if (outputDevices & AudioSystem::DEVICE_OUT_SPEAKER) {
-                    LOGI("Routing audio to Speakerphone\n");
-                    sndDevice = SND_DEVICE_SPEAKER;
-                    audProcess = (ADRC_ENABLE | EQ_ENABLE | RX_IIR_ENABLE);
+				LOGI("Routing audio to Speakerphone\n");
+                sndDevice = SND_DEVICE_SPEAKER;
+                audProcess = (ADRC_ENABLE | EQ_ENABLE | RX_IIR_ENABLE);
             } else {
                 LOGI("Routing audio to Handset\n");
                 sndDevice = SND_DEVICE_HANDSET;
@@ -554,26 +553,24 @@ status_t AudioHardware::doRouting()
     if (sndDevice == -1) {
         if (outputDevices & (outputDevices - 1)) {
             if ((outputDevices & AudioSystem::DEVICE_OUT_SPEAKER) == 0) {
-                LOGW("Hardware does not support requested route combination (%#X),"
+				LOGW("Hardware does not support requested route combination (%#X),"
                      " picking closest possible route...", outputDevices);
             }
         }
 
-        if (outputDevices &
-            (AudioSystem::DEVICE_OUT_BLUETOOTH_SCO | AudioSystem::DEVICE_OUT_BLUETOOTH_SCO_HEADSET)) {
+        if (outputDevices & (AudioSystem::DEVICE_OUT_BLUETOOTH_SCO | AudioSystem::DEVICE_OUT_BLUETOOTH_SCO_HEADSET)) {
             LOGI("Routing audio to Bluetooth PCM 2\n");
             sndDevice = SND_DEVICE_BT;
         } else if (outputDevices & AudioSystem::DEVICE_OUT_BLUETOOTH_SCO_CARKIT) {
             LOGI("Routing audio to Bluetooth PCM 3\n");
             sndDevice = SND_DEVICE_CARKIT;
-        } else if ((outputDevices & AudioSystem::DEVICE_OUT_WIRED_HEADSET) &&
-                   (outputDevices & AudioSystem::DEVICE_OUT_SPEAKER)) {
+        } else if ((outputDevices & AudioSystem::DEVICE_OUT_WIRED_HEADSET) && (outputDevices & AudioSystem::DEVICE_OUT_SPEAKER)) {
             LOGI("Routing audio to Wired Headset and Speaker 2\n");
             sndDevice = SND_DEVICE_HEADSET_AND_SPEAKER;
             audProcess = (ADRC_ENABLE | EQ_ENABLE | RX_IIR_ENABLE);
         } else if (outputDevices & AudioSystem::DEVICE_OUT_WIRED_HEADPHONE) {
-            if (outputDevices & AudioSystem::DEVICE_OUT_SPEAKER) {
-                LOGI("Routing audio to No microphone Wired Headset and Speaker 2 (%d,%x)\n", mMode, outputDevices);
+			if (outputDevices & AudioSystem::DEVICE_OUT_SPEAKER) {
+				LOGI("Routing audio to No microphone Wired Headset and Speaker 2 (%d,%x)\n", mMode, outputDevices);
                 sndDevice = SND_DEVICE_HEADSET_AND_SPEAKER;
                 audProcess = (ADRC_ENABLE | EQ_ENABLE | RX_IIR_ENABLE);
             } else {
@@ -581,57 +578,66 @@ status_t AudioHardware::doRouting()
                 sndDevice = SND_DEVICE_NO_MIC_HEADSET;
             }
         } else if (outputDevices & AudioSystem::DEVICE_OUT_WIRED_HEADSET) {
-		if(mMode != AudioSystem::MODE_IN_CALL) {
-           	    LOGI("Routing audio to Wired Headset 2 normal\n");
-		    sndDevice = SND_DEVICE_HEADSET;
-		} else {
-		    LOGI("Routing audio to Wired Headset 2 in-call\n");
-		    sndDevice = SND_DEVICE_HEADSET_INCALL;
-		}
+			if(mMode != AudioSystem::MODE_IN_CALL) {
+				LOGI("Routing audio to Wired Headset 2 normal\n");
+				sndDevice = SND_DEVICE_HEADSET;
+			} else {
+				LOGI("Routing audio to Wired Headset 2 in-call\n");
+				sndDevice = SND_DEVICE_HEADSET_INCALL;
+			}
         } else if (outputDevices & AudioSystem::DEVICE_OUT_SPEAKER) {
-		if(mMode != AudioSystem::MODE_IN_CALL) {
-           	    LOGI("Routing audio to Speakerphone 2 normal\n");
-		    sndDevice = SND_DEVICE_SPEAKER_MIDI;
-		} else {
-		    LOGI("Routing audio to Speakerphone 2 in-call\n");
-		    sndDevice = SND_DEVICE_SPEAKER;
-		}
+			if(mMode != AudioSystem::MODE_IN_CALL) {
+				LOGI("Routing audio to Speakerphone 2 normal\n");
+				sndDevice = SND_DEVICE_SPEAKER_MIDI;
+			} else {
+				LOGI("Routing audio to Speakerphone 2 in-call\n");
+				sndDevice = SND_DEVICE_SPEAKER;
+			}
                 audProcess = (ADRC_ENABLE | EQ_ENABLE | RX_IIR_ENABLE);
         } else {
             LOGI("Routing audio to Handset 2\n");
             sndDevice = SND_DEVICE_HANDSET;
         }
     }
-    LOGI("sndDevice: %d mCurSndDevice: %d \n",sndDevice,mCurSndDevice); //ogix
+    
+    if (LOG_NDEBUG) {
+		LOGI("sndDevice: %d mCurSndDevice: %d \n",sndDevice,mCurSndDevice); //ogix
+	}
 
     if (sndDevice != -1 && sndDevice != mCurSndDevice) {
-
-	MAX9877_ioctl(MAX9877_AMP_SUSPEND);
-
+		
+		if (LOG_NDEBUG) {
+			LOGI("Switching device");
+		}
+		
+		MAX9877_ioctl(MAX9877_AMP_SUSPEND);
         ret = doAudioRouteOrMute(sndDevice);
 
-	if(sndDevice==SND_DEVICE_HEADSET){ //3
-		MAX9877_ioctl(MAX9877_SPEAKER_OFF);	
-	}
-	else if(sndDevice==SND_DEVICE_HEADSET_INCALL){ //2
-		MAX9877_ioctl(MAX9877_HEADSET_ON);	
-	}
-	else if(sndDevice==SND_DEVICE_SPEAKER_MIDI){ //26
-		MAX9877_ioctl(MAX9877_SPEAKER_ON);
-        }
-	else if(sndDevice==SND_DEVICE_SPEAKER){ //6
-		MAX9877_ioctl(MAX9877_HEADSET_OFF);
-        }
-	else if(sndDevice==SND_DEVICE_HANDSET){ //0
-		MAX9877_ioctl(MAX9877_RCV_ON);
-        }
-	else if(sndDevice==SND_DEVICE_BT){ //12
-		//MAX9877_ioctl(MAX9877_RCV_ON);
-        }
+		if(sndDevice==SND_DEVICE_HEADSET){ //3
+			MAX9877_ioctl(MAX9877_SPEAKER_OFF);
+			MAX9877_ioctl(MAX9877_HEADSET_OFF);
+			MAX9877_ioctl(MAX9877_HEADSET_ON);		
+		}
+		else if(sndDevice==SND_DEVICE_HEADSET_INCALL){ //2
+			MAX9877_ioctl(MAX9877_HEADSET_OFF);
+			MAX9877_ioctl(MAX9877_HEADSET_ON);	
+		}
+		else if(sndDevice==SND_DEVICE_SPEAKER_MIDI){ //26
+			MAX9877_ioctl(MAX9877_SPEAKER_ON);
+		}
+		else if(sndDevice==SND_DEVICE_SPEAKER){ //6
+			MAX9877_ioctl(MAX9877_HEADSET_OFF);
+		}
+		else if(sndDevice==SND_DEVICE_HANDSET){ //0
+			MAX9877_ioctl(MAX9877_RCV_ON);
+		}
+		else if(sndDevice==SND_DEVICE_BT){ //12
+			//MAX9877_ioctl(MAX9877_RCV_ON);
+		}
 
-	do_audpp_enable_rpc(audProcess);
-
-	MAX9877_ioctl(MAX9877_AMP_RESUME);
+		do_audpp_enable_rpc(audProcess);
+		MAX9877_ioctl(MAX9877_AMP_RESUME);
+		mCurSndDevice = sndDevice;
 
 //ogix
 /* 
@@ -641,9 +647,7 @@ status_t AudioHardware::doRouting()
             msm72xx_enable_audpp(audProcess);
         }
 */
-        mCurSndDevice = sndDevice;
     }
-
     return ret;
 }
 
