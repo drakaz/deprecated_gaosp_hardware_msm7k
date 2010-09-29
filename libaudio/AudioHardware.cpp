@@ -561,9 +561,11 @@ status_t AudioHardware::doRouting()
         if (outputDevices & (AudioSystem::DEVICE_OUT_BLUETOOTH_SCO | AudioSystem::DEVICE_OUT_BLUETOOTH_SCO_HEADSET)) {
             LOGI("Routing audio to Bluetooth PCM 2\n");
             sndDevice = SND_DEVICE_BT;
+            audProcess = (ADRC_DISABLE | EQ_DISABLE | RX_IIR_DISABLE);
         } else if (outputDevices & AudioSystem::DEVICE_OUT_BLUETOOTH_SCO_CARKIT) {
             LOGI("Routing audio to Bluetooth PCM 3\n");
             sndDevice = SND_DEVICE_CARKIT;
+            audProcess = (ADRC_DISABLE | EQ_DISABLE | RX_IIR_DISABLE);
         } else if ((outputDevices & AudioSystem::DEVICE_OUT_WIRED_HEADSET) && (outputDevices & AudioSystem::DEVICE_OUT_SPEAKER)) {
             LOGI("Routing audio to Wired Headset and Speaker 2\n");
             sndDevice = SND_DEVICE_HEADSET_AND_SPEAKER;
@@ -632,7 +634,7 @@ status_t AudioHardware::doRouting()
 			MAX9877_ioctl(MAX9877_RCV_ON);
 		}
 		else if(sndDevice==SND_DEVICE_BT){ //12
-			//MAX9877_ioctl(MAX9877_RCV_ON);
+			MAX9877_ioctl(MAX9877_RCV_ON);
 		}
 
 		do_audpp_enable_rpc(audProcess);
