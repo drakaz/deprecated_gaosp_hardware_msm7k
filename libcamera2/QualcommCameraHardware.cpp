@@ -218,6 +218,7 @@ static const str_map iso[] = {
 static char *iso_values ;
 
 static const str_map focusmode[] = {
+    { "auto",	M4MO_AF_NORMAL },
     { "normal",	M4MO_AF_NORMAL },
     { "macro",	M4MO_AF_MACRO },
     { NULL, 0 }
