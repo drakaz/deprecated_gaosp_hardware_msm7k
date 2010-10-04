@@ -386,6 +386,7 @@ private:
     void stopFlash() ;
     void startFlashMovie() ;
     void stopFlashMovie() ;
+    bool isContinuousFocus() ;
     
     void m4mo_write_8bit( char category, char byte, char value ) ;	    
     unsigned char m4mo_read_8bit( char category, char byte ) ;

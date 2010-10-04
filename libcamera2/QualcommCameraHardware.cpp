@@ -1592,7 +1592,7 @@ void QualcommCameraHardware::runAutoFocus()
         return;
     }
     
-    mPictureNeedFlash = flashNeeded() ;
+    mPictureNeedFlash = flashNeeded() && ! isContinuousFocus() ;
     
     if( mPictureNeedFlash ) {
 	LOGD("flash needed") ;
@@ -2398,6 +2398,17 @@ int QualcommCameraHardware::getParm(
 
     // Look up the parameter value.
     return attr_lookup(parm_map, str);
+}
+
+bool QualcommCameraHardware::isContinuousFocus()
+{
+	const char *str = mParameters.get("focus-mode") ;
+	bool res = false ;
+
+	if( strncmp( str, "auto", 4 ) == 0 ) {
+		res = true ;
+	}
+	return res ;
 }
 
 void QualcommCameraHardware::setExposure()
