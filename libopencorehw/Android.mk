@@ -23,8 +23,13 @@ include $(CLEAR_VARS)
 include external/opencore/Config.mk
 LOCAL_C_INCLUDES := $(PV_INCLUDES)
 
+ifeq ($(TARGET_BOARD_PLATFORM),msm7x30)
+LOCAL_SRC_FILES := \
+    android_surface_output_msm7x30.cpp
+else
 LOCAL_SRC_FILES := \
     android_surface_output_msm72xx.cpp
+endif
 
 LOCAL_CFLAGS := $(PV_CFLAGS_MINUS_VISIBILITY)
 
