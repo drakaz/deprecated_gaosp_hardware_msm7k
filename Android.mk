@@ -19,7 +19,7 @@ msm7k_dirs := $(common_msm_dirs) boot libgralloc libaudio libcamera2
 msm7k_adreno_dirs := $(common_msm_dirs) boot libgralloc-qsd8k libaudio
 qsd8k_dirs := $(common_msm_dirs) libgralloc-qsd8k libaudio-qsd8k dspcrashd
 #msm7x30_dirs := $(common_msm_dirs) libgralloc-qsd8k libaudio-msm7x30 liboverlay
-msm7x30_dirs := $(common_msm_dirs) liboverlay
+msm7x30_dirs := $(common_msm_dirs) liboverlay libaudio-msm7x30
 
 ifeq ($(TARGET_BOARD_PLATFORM),msm7k)
   ifeq ($(TARGET_BOARD_PLATFORM_GPU),qcom-adreno200)

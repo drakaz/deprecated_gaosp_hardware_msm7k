@@ -26,10 +26,7 @@
 #include <hardware_legacy/AudioHardwareBase.h>
 
 extern "C" {
-#include <linux/msm_audio.h>
-#include <linux/msm_audio_qcp.h>
-#include <linux/msm_audio_aac.h>
-#include <linux/msm_audio_amrnb.h>
+#include <linux/msm_audio_7X30.h>
 }
 
 namespace android {

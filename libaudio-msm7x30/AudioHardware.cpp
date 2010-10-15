@@ -28,27 +28,9 @@
 #include <sys/stat.h>
 #include <dlfcn.h>
 #include <fcntl.h>
-#if defined(QC_PROP)
+
 #include "control.h"
-#else
-        #define msm_mixer_count() (-EPERM)
-        #define msm_mixer_open(name, card) (-EPERM)
-        #define msm_mixer_close() (-EPERM)
-        #define msm_get_device(name) (-EPERM)
-        #define msm_en_device(dev_id, set) (-EPERM)
-        #define msm_route_stream(dir, dec_id, dev_id, set) (-EPERM)
-        #define msm_route_voice(tx, rx, set) (-EPERM)
-        #define msm_set_volume(dec_id, vol) (-EPERM)
-        #define msm_get_device_class(device_id) (-EPERM)
-        #define msm_get_device_capability(device_id) (-EPERM)
-        #define msm_get_device_list() (-EPERM)
-        #define msm_get_device_count() (-EPERM)
-        #define msm_start_voice() (-EPERM)
-        #define msm_end_voice() (-EPERM)
-        #define msm_set_voice_tx_mute(mute) (-EPERM)
-        #define msm_set_voice_rx_vol(volume) (-EPERM)
-        #define msm_set_device_volume(dev_id,volume) (-EPERM)
-#endif
+
 // hardware specific functions
 
 #include "AudioHardware.h"
@@ -59,6 +41,12 @@
 #define DUALMIC_KEY "dualmic_enabled"
 #define TTY_MODE_KEY "tty_mode"
 
+// Unimplemented encoders
+#define AUDIO_GET_AMRNB_ENC_CONFIG_V2 0
+#define AUDIO_GET_AAC_ENC_CONFIG 0
+#define AUDIO_SET_AMRNB_ENC_CONFIG_V2 0
+#define AUDIO_SET_AAC_ENC_CONFIG 0
+
 #define AMRNB_DEVICE_IN "/dev/msm_amrnb_in"
 #define EVRC_DEVICE_IN "/dev/msm_evrc_in"
 #define QCELP_DEVICE_IN "/dev/msm_qcelp_in"
@@ -66,7 +54,6 @@
 #define FM_DEVICE  "/dev/msm_fm"
 
 #define AMRNB_FRAME_SIZE 32
-#define EVRC_FRAME_SIZE 23
 #define QCELP_FRAME_SIZE 35
 
 namespace android {
@@ -780,8 +767,6 @@ size_t AudioHardware::getInputBufferSize(uint32_t sampleRate, int format, int ch
 {
     if ((format != AudioSystem::PCM_16_BIT) &&
         (format != AudioSystem::AMR_NB)      &&
-        (format != AudioSystem::EVRC)      &&
-        (format != AudioSystem::QCELP)  &&
         (format != AudioSystem::AAC)){
         LOGW("getInputBufferSize bad format: %d", format);
         return 0;
@@ -793,10 +778,6 @@ size_t AudioHardware::getInputBufferSize(uint32_t sampleRate, int format, int ch
 
     if (format == AudioSystem::AMR_NB)
        return 320*channelCount;
-    if (format == AudioSystem::EVRC)
-       return 230*channelCount;
-    else if (format == AudioSystem::QCELP)
-       return 350*channelCount;
     else if (format == AudioSystem::AAC)
        return 2048;
     else
@@ -1727,8 +1708,6 @@ status_t AudioHardware::AudioStreamInMSM72xx::set(
     if ((pFormat == 0) ||
         ((*pFormat != AUDIO_HW_IN_FORMAT) &&
          (*pFormat != AudioSystem::AMR_NB) &&
-         (*pFormat != AudioSystem::EVRC) &&
-         (*pFormat != AudioSystem::QCELP) &&
          (*pFormat != AudioSystem::AAC)))
     {
         *pFormat = AUDIO_HW_IN_FORMAT;
@@ -1818,271 +1797,6 @@ status_t AudioHardware::AudioStreamInMSM72xx::set(
         mChannels = *pChannels;
         mSampleRate = config.sample_rate;
         mBufferSize = config.buffer_size;
-    }
-    else if (*pFormat == AudioSystem::EVRC)
-    {
-          LOGI("Recording format: EVRC");
-          // open evrc input device
-          status = ::open(EVRC_DEVICE_IN, O_RDWR);
-          if (status < 0) {
-              LOGE("Cannot open evrc device for read");
-              goto Error;
-          }
-          mFd = status;
-          mDevices = devices;
-          mChannels = *pChannels;
-
-          if (mDevices == AudioSystem::DEVICE_IN_VOICE_CALL)
-          {
-              if ((mChannels & AudioSystem::CHANNEL_IN_VOICE_DNLINK) &&
-                     (mChannels & AudioSystem::CHANNEL_IN_VOICE_UPLINK)) {
-                  LOGI("Recording Source: Voice Call Both Uplink and Downlink");
-                  voc_rec_cfg.rec_mode = VOC_REC_BOTH;
-              } else if (mChannels & AudioSystem::CHANNEL_IN_VOICE_DNLINK) {
-                  LOGI("Recording Source: Voice Call DownLink");
-                  voc_rec_cfg.rec_mode = VOC_REC_DOWNLINK;
-              } else if (mChannels & AudioSystem::CHANNEL_IN_VOICE_UPLINK) {
-                  LOGI("Recording Source: Voice Call UpLink");
-                  voc_rec_cfg.rec_mode = VOC_REC_UPLINK;
-              }
-
-              if (ioctl(mFd, AUDIO_SET_INCALL, &voc_rec_cfg))
-              {
-                 LOGE("Error: AUDIO_SET_INCALL failed\n");
-                 goto  Error;
-              }
-          }
-
-          /* Config param */
-          struct msm_audio_stream_config config;
-          if(ioctl(mFd, AUDIO_GET_STREAM_CONFIG, &config))
-          {
-            LOGE(" Error getting buf config param AUDIO_GET_STREAM_CONFIG \n");
-            goto  Error;
-          }
-
-          LOGV("The Config buffer size is %d", config.buffer_size);
-          LOGV("The Config buffer count is %d", config.buffer_count);
-
-          mSampleRate =8000;
-          mFormat = *pFormat;
-          mBufferSize = 230;
-          struct msm_audio_evrc_enc_config evrc_enc_cfg;
-
-          if (ioctl(mFd, AUDIO_GET_EVRC_ENC_CONFIG, &evrc_enc_cfg))
-          {
-            LOGE("Error: AUDIO_GET_EVRC_ENC_CONFIG failed\n");
-            goto  Error;
-          }
-
-          LOGV("The Config cdma_rate is %d", evrc_enc_cfg.cdma_rate);
-          LOGV("The Config min_bit_rate is %d", evrc_enc_cfg.min_bit_rate);
-          LOGV("The Config max_bit_rate is %d", evrc_enc_cfg.max_bit_rate);
-
-          evrc_enc_cfg.min_bit_rate = 4;
-          evrc_enc_cfg.max_bit_rate = 4;
-
-          if (ioctl(mFd, AUDIO_SET_EVRC_ENC_CONFIG, &evrc_enc_cfg))
-          {
-            LOGE("Error: AUDIO_SET_EVRC_ENC_CONFIG failed\n");
-            goto  Error;
-          }
-    }
-    else if (*pFormat == AudioSystem::QCELP)
-    {
-          LOGI("Recording format: QCELP");
-          // open qcelp input device
-          status = ::open(QCELP_DEVICE_IN, O_RDWR);
-          if (status < 0) {
-              LOGE("Cannot open qcelp device for read");
-              goto Error;
-          }
-          mFd = status;
-          mDevices = devices;
-          mChannels = *pChannels;
-
-          if (mDevices == AudioSystem::DEVICE_IN_VOICE_CALL)
-          {
-              if ((mChannels & AudioSystem::CHANNEL_IN_VOICE_DNLINK) &&
-                  (mChannels & AudioSystem::CHANNEL_IN_VOICE_UPLINK)) {
-                  LOGI("Recording Source: Voice Call Both Uplink and Downlink");
-                  voc_rec_cfg.rec_mode = VOC_REC_BOTH;
-              } else if (mChannels & AudioSystem::CHANNEL_IN_VOICE_DNLINK) {
-                  LOGI("Recording Source: Voice Call DownLink");
-                  voc_rec_cfg.rec_mode = VOC_REC_DOWNLINK;
-              } else if (mChannels & AudioSystem::CHANNEL_IN_VOICE_UPLINK) {
-                  LOGI("Recording Source: Voice Call UpLink");
-                  voc_rec_cfg.rec_mode = VOC_REC_UPLINK;
-              }
-
-              if (ioctl(mFd, AUDIO_SET_INCALL, &voc_rec_cfg))
-              {
-                 LOGE("Error: AUDIO_SET_INCALL failed\n");
-                 goto  Error;
-              }
-          }
-
-          /* Config param */
-          struct msm_audio_stream_config config;
-          if(ioctl(mFd, AUDIO_GET_STREAM_CONFIG, &config))
-          {
-            LOGE(" Error getting buf config param AUDIO_GET_STREAM_CONFIG \n");
-            goto  Error;
-          }
-
-          LOGV("The Config buffer size is %d", config.buffer_size);
-          LOGV("The Config buffer count is %d", config.buffer_count);
-
-          mSampleRate =8000;
-          mFormat = *pFormat;
-          mBufferSize = 350;
-
-          struct msm_audio_qcelp_enc_config qcelp_enc_cfg;
-
-          if (ioctl(mFd, AUDIO_GET_QCELP_ENC_CONFIG, &qcelp_enc_cfg))
-          {
-            LOGE("Error: AUDIO_GET_QCELP_ENC_CONFIG failed\n");
-            goto  Error;
-          }
-
-          LOGV("The Config cdma_rate is %d", qcelp_enc_cfg.cdma_rate);
-          LOGV("The Config min_bit_rate is %d", qcelp_enc_cfg.min_bit_rate);
-          LOGV("The Config max_bit_rate is %d", qcelp_enc_cfg.max_bit_rate);
-
-          qcelp_enc_cfg.min_bit_rate = 4;
-          qcelp_enc_cfg.max_bit_rate = 4;
-
-          if (ioctl(mFd, AUDIO_SET_QCELP_ENC_CONFIG, &qcelp_enc_cfg))
-          {
-            LOGE("Error: AUDIO_SET_QCELP_ENC_CONFIG failed\n");
-            goto  Error;
-          }
-    }
-    else if (*pFormat == AudioSystem::AMR_NB)
-    {
-          LOGI("Recording format: AMR_NB");
-          // open amr_nb input device
-          status = ::open(AMRNB_DEVICE_IN, O_RDWR);
-          if (status < 0) {
-              LOGE("Cannot open amr_nb device for read");
-              goto Error;
-          }
-          mFd = status;
-          mDevices = devices;
-          mChannels = *pChannels;
-
-          if (mDevices == AudioSystem::DEVICE_IN_VOICE_CALL)
-          {
-              if ((mChannels & AudioSystem::CHANNEL_IN_VOICE_DNLINK) &&
-                     (mChannels & AudioSystem::CHANNEL_IN_VOICE_UPLINK)) {
-                  LOGI("Recording Source: Voice Call Both Uplink and Downlink");
-                  voc_rec_cfg.rec_mode = VOC_REC_BOTH;
-              } else if (mChannels & AudioSystem::CHANNEL_IN_VOICE_DNLINK) {
-                  LOGI("Recording Source: Voice Call DownLink");
-                  voc_rec_cfg.rec_mode = VOC_REC_DOWNLINK;
-              } else if (mChannels & AudioSystem::CHANNEL_IN_VOICE_UPLINK) {
-                  LOGI("Recording Source: Voice Call UpLink");
-                  voc_rec_cfg.rec_mode = VOC_REC_UPLINK;
-              }
-
-              if (ioctl(mFd, AUDIO_SET_INCALL, &voc_rec_cfg))
-              {
-                 LOGE("Error: AUDIO_SET_INCALL failed\n");
-                 goto  Error;
-              }
-          }
-
-          /* Config param */
-          struct msm_audio_stream_config config;
-          if(ioctl(mFd, AUDIO_GET_STREAM_CONFIG, &config))
-          {
-            LOGE(" Error getting buf config param AUDIO_GET_STREAM_CONFIG \n");
-            goto  Error;
-          }
-
-          LOGV("The Config buffer size is %d", config.buffer_size);
-          LOGV("The Config buffer count is %d", config.buffer_count);
-
-          mSampleRate =8000;
-          mFormat = *pFormat;
-          mBufferSize = 320;
-          struct msm_audio_amrnb_enc_config_v2 amr_nb_cfg;
-
-          if (ioctl(mFd, AUDIO_GET_AMRNB_ENC_CONFIG_V2, &amr_nb_cfg))
-          {
-            LOGE("Error: AUDIO_GET_AMRNB_ENC_CONFIG_V2 failed\n");
-            goto  Error;
-          }
-
-          LOGV("The Config band_mode is %d", amr_nb_cfg.band_mode);
-          LOGV("The Config dtx_enable is %d", amr_nb_cfg.dtx_enable);
-          LOGV("The Config frame_format is %d", amr_nb_cfg.frame_format);
-
-          amr_nb_cfg.band_mode = 7; /* Bit Rate 12.2 kbps MR122 */
-          amr_nb_cfg.dtx_enable= 0;
-          amr_nb_cfg.frame_format = 0; /* IF1 */
-
-          if (ioctl(mFd, AUDIO_SET_AMRNB_ENC_CONFIG_V2, &amr_nb_cfg))
-          {
-            LOGE("Error: AUDIO_SET_AMRNB_ENC_CONFIG_V2 failed\n");
-            goto  Error;
-          }
-    }
-    else if (*pFormat == AudioSystem::AAC)
-    {
-          LOGI("Recording format: AAC");
-          // open aac input device
-          status = ::open(AAC_DEVICE_IN, O_RDWR);
-          if (status < 0) {
-              LOGE("Cannot open aac device for read");
-              goto Error;
-          }
-          mFd = status;
-
-          struct msm_audio_stream_config config;
-          if(ioctl(mFd, AUDIO_GET_STREAM_CONFIG, &config))
-          {
-            LOGE(" Error getting buf config param AUDIO_GET_STREAM_CONFIG \n");
-            goto  Error;
-          }
-
-          LOGE("The Config buffer size is %d", config.buffer_size);
-          LOGE("The Config buffer count is %d", config.buffer_count);
-
-
-          struct msm_audio_aac_enc_config aac_enc_cfg;
-          if (ioctl(mFd, AUDIO_GET_AAC_ENC_CONFIG, &aac_enc_cfg))
-          {
-            LOGE("Error: AUDIO_GET_AAC_ENC_CONFIG failed\n");
-            goto  Error;
-          }
-
-          LOGV("The Config channels is %d", aac_enc_cfg.channels);
-          LOGV("The Config sample_rate is %d", aac_enc_cfg.sample_rate);
-          LOGV("The Config bit_rate is %d", aac_enc_cfg.bit_rate);
-          LOGV("The Config stream_format is %d", aac_enc_cfg.stream_format);
-
-          mDevices = devices;
-          mChannels = *pChannels;
-          aac_enc_cfg.sample_rate = mSampleRate = *pRate;
-          mFormat = *pFormat;
-          mBufferSize = 2048;
-          if (*pChannels & (AudioSystem::CHANNEL_IN_MONO))
-              aac_enc_cfg.channels =  1;
-          else if (*pChannels & (AudioSystem::CHANNEL_IN_STEREO))
-              aac_enc_cfg.channels =  2;
-          aac_enc_cfg.bit_rate = 128000;
-
-          LOGV("Setting the Config channels is %d", aac_enc_cfg.channels);
-          LOGV("Setting the Config sample_rate is %d", aac_enc_cfg.sample_rate);
-          LOGV("Setting the Config bit_rate is %d", aac_enc_cfg.bit_rate);
-          LOGV("Setting the Config stream_format is %d", aac_enc_cfg.stream_format);
-
-          if (ioctl(mFd, AUDIO_SET_AAC_ENC_CONFIG, &aac_enc_cfg))
-          {
-            LOGE("Error: AUDIO_SET_AAC_ENC_CONFIG failed\n");
-            goto  Error;
-          }
     }
     //mHardware->setMicMute_nosync(false);
     mState = AUDIO_INPUT_OPENED;
@@ -2221,7 +1935,7 @@ ssize_t AudioHardware::AudioStreamInMSM72xx::read( void* buffer, ssize_t bytes)
             }
         }
     }
-    else if ((mFormat == AudioSystem::EVRC) || (mFormat == AudioSystem::QCELP) || (mFormat == AudioSystem::AMR_NB))
+    else if (mFormat == AudioSystem::AMR_NB)
     {
         uint8_t readBuf[36];
         uint8_t *dataPtr;
@@ -2240,32 +1954,6 @@ ssize_t AudioHardware::AudioStreamInMSM72xx::read( void* buffer, ssize_t bytes)
                       break;
                    }
                 }
-                else {
-                    dataPtr++;
-                    if (mFormat == AudioSystem::EVRC){
-                       memcpy(p, dataPtr, EVRC_FRAME_SIZE);
-                       p += EVRC_FRAME_SIZE;
-                       count -= EVRC_FRAME_SIZE;
-                       bytes += EVRC_FRAME_SIZE;
-                       if(!mFirstread)
-                       {
-                          mFirstread = true;
-                          break;
-                       }
-                    }
-                    else if (mFormat == AudioSystem::QCELP){
-                       memcpy(p, dataPtr, QCELP_FRAME_SIZE);
-                       p += QCELP_FRAME_SIZE;
-                       count -= QCELP_FRAME_SIZE;
-                       bytes += QCELP_FRAME_SIZE;
-                       if(!mFirstread)
-                       {
-                          mFirstread = true;
-                          break;
-                       }
-                    }
-                }
-
             } else {
                 if (errno != EAGAIN) return bytesRead;
                 mRetryCount++;
