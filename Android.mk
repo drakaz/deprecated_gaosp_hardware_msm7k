@@ -21,18 +21,19 @@ qsd8k_dirs := $(common_msm_dirs) libgralloc-qsd8k libaudio-qsd8k dspcrashd
 #msm7x30_dirs := $(common_msm_dirs) libgralloc-qsd8k libaudio-msm7x30 liboverlay
 msm7x30_dirs := $(common_msm_dirs) liboverlay libaudio-msm7x30
 
-ifeq ($(TARGET_BOARD_PLATFORM),msm7k)
-  ifeq ($(TARGET_BOARD_PLATFORM_GPU),qcom-adreno200)
+ifeq ($(TARGET_BOARD_PLATFORM_GPU),qcom-adreno200)
+    ### MSM7k with Adreno GPU
     include $(call all-named-subdir-makefiles,$(msm7k_adreno_dirs))
-  else
+else ifeq ($(TARGET_BOOTLOADER_BOARD_NAME),adq)
+    ### "adq" board (7x25)
+    include $(call all-named-subdir-makefiles,$(common_msm_dirs))
+else ifeq ($(TARGET_BOARD_PLATFORM),msm7x30)
+    ### MSM7x30
+    include $(call all-named-subdir-makefiles,$(msm7x30_dirs))
+else ifeq ($(TARGET_BOARD_PLATFORM),msm7k)
+    ### Other MSM7k
     include $(call all-named-subdir-makefiles,$(msm7k_dirs))
-  endif
-else
-  ifeq ($(TARGET_BOARD_PLATFORM),qsd8k)
+else ifeq ($(TARGET_BOARD_PLATFORM),qsd8k)
+    ### QSD8k
     include $(call all-named-subdir-makefiles,$(qsd8k_dirs))
-  else
-    ifeq ($(TARGET_BOARD_PLATFORM),msm7x30)
-      include $(call all-named-subdir-makefiles,$(msm7x30_dirs))
-    endif
-  endif
 endif
