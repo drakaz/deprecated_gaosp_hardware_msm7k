@@ -508,7 +508,8 @@ status_t AudioHardware::doAudioRouteOrMute(uint32_t device)
 		LOGI("doAudioRouteOrMute() device %x, mMode %d, mMicMute %d", device, mMode, mMicMute);
 	}
     return do_route_audio_rpc(device,
-                  mMode != AudioSystem::MODE_IN_CALL, mMicMute);
+                  mMode != AudioSystem::MODE_IN_CALL, 
+                    (mMode == AudioSystem::MODE_IN_CALL) ? mMicMute : true);
 }
 
 status_t AudioHardware::doRouting()
