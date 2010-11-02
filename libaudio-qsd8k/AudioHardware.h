@@ -161,6 +161,10 @@ struct msm_mute_info {
 #define AUDIO_HW_IN_BUFSZ 256  // Default audio input buffer size
 
 #define VOICE_VOLUME_MAX 5  // Maximum voice volume
+#define AUDIO_IOCTL_MAGIC 'a'
+#define AUDIO_START_FM       _IOW(AUDIO_IOCTL_MAGIC, 37, unsigned)
+#define AUDIO_STOP_FM        _IOW(AUDIO_IOCTL_MAGIC, 38, unsigned)
+
 // ----------------------------------------------------------------------------
 
 
@@ -176,6 +180,7 @@ public:
 
     virtual status_t    setVoiceVolume(float volume);
     virtual status_t    setMasterVolume(float volume);
+    virtual status_t    setFmVolume(float volume);
 
     virtual status_t    setMode(int mode);
 
@@ -230,6 +235,7 @@ private:
     status_t    doAudience_A1026_Control(int Mode, bool Record, uint32_t Routes);
     status_t    doRouting();
     status_t    updateACDB();
+    status_t    setFmOnOff(bool onoff);
     uint32_t    getACDB(int mode, int device);
     AudioStreamInMSM72xx*   getActiveInput_l();
     status_t    do_tpa2018_control(int mode);

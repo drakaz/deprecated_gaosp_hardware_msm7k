@@ -17,10 +17,17 @@
 LOCAL_PATH := $(call my-dir)
 include $(CLEAR_VARS)
 
+ifeq ($(TARGET_BOARD_PLATFORM),msm7x30)
+LOCAL_SRC_FILES := \
+    stagefright_surface_output_msm7x30.cpp \
+    QComHardwareOverlayRenderer.cpp
+else
 LOCAL_SRC_FILES := \
     stagefright_surface_output_msm72xx.cpp \
     QComOMXPlugin.cpp                      \
     QComHardwareRenderer.cpp
+endif
+
 
 LOCAL_CFLAGS := $(PV_CFLAGS_MINUS_VISIBILITY)
 
@@ -32,7 +39,8 @@ LOCAL_SHARED_LIBRARIES :=       \
         libutils                \
         libcutils               \
         libdl                   \
-        libui
+        libui                   \
+        libhardware
 
 ifneq ($(BOARD_USES_ECLAIR_LIBCAMERA),true)
     LOCAL_SHARED_LIBRARIES += \
