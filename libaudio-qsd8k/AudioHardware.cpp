@@ -502,6 +502,7 @@ status_t AudioHardware::setParameters(const String8& keyValuePairs)
         }
      }
 
+#ifdef HAVE_FM_RADIO
     key = String8(AudioParameter::keyFmOn);
     int devices;
     if (param.getInt(key, devices) == NO_ERROR) {
@@ -511,6 +512,7 @@ status_t AudioHardware::setParameters(const String8& keyValuePairs)
     if (param.getInt(key, devices) == NO_ERROR) {
        setFmOnOff(false);
     }
+#endif
     return NO_ERROR;
 }
 
@@ -600,6 +602,7 @@ size_t AudioHardware::getInputBufferSize(uint32_t sampleRate, int format, int ch
     return getBufferSize(sampleRate, channelCount);
 }
 
+#ifdef HAVE_FM_RADIO
 static status_t set_volume_fm(uint32_t volume)
 {
     int returnval = 0;
@@ -647,6 +650,7 @@ status_t AudioHardware::setFmOnOff(bool onoff)
     close(fd);
     return NO_ERROR;
 }
+#endif
 
 static status_t set_volume_rpc(uint32_t volume)
 {
@@ -699,6 +703,7 @@ status_t AudioHardware::setMasterVolume(float v)
     return -1;
 }
 
+#ifdef HAVE_FM_RADIO
 status_t AudioHardware::setFmVolume(float v)
 {
     int vol = AudioSystem::logToLinear(v);
@@ -706,6 +711,7 @@ status_t AudioHardware::setFmVolume(float v)
     set_volume_fm(vol);
     return NO_ERROR;
 }
+#endif
 
 static status_t do_route_audio_dev_ctrl(uint32_t device, bool inCall, uint32_t rx_acdb_id, uint32_t tx_acdb_id)
 {
