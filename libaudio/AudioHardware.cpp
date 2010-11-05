@@ -531,7 +531,7 @@ status_t AudioHardware::doRouting()
         } else if (inputDevice & AudioSystem::DEVICE_IN_WIRED_HEADSET) {
             if ((outputDevices & AudioSystem::DEVICE_OUT_WIRED_HEADSET) && (outputDevices & AudioSystem::DEVICE_OUT_SPEAKER)) {       
 				LOGI("Routing audio to Wired Headset and Speaker\n");
-                sndDevice = SND_DEVICE_HEADSET_AND_SPEAKER;
+                sndDevice = SND_DEVICE_SPEAKER;//SND_DEVICE_HEADSET_AND_SPEAKER;
                 audProcess = (ADRC_ENABLE | EQ_ENABLE | RX_IIR_ENABLE);
             } else {
                 LOGI("Routing audio to Wired Headset\n");
@@ -568,12 +568,12 @@ status_t AudioHardware::doRouting()
             audProcess = (ADRC_DISABLE | EQ_DISABLE | RX_IIR_DISABLE);
         } else if ((outputDevices & AudioSystem::DEVICE_OUT_WIRED_HEADSET) && (outputDevices & AudioSystem::DEVICE_OUT_SPEAKER)) {
             LOGI("Routing audio to Wired Headset and Speaker 2\n");
-            sndDevice = SND_DEVICE_HEADSET_AND_SPEAKER;
+            sndDevice = SND_DEVICE_SPEAKER_MIDI;//SND_DEVICE_HEADSET_AND_SPEAKER;
             audProcess = (ADRC_ENABLE | EQ_ENABLE | RX_IIR_ENABLE);
         } else if (outputDevices & AudioSystem::DEVICE_OUT_WIRED_HEADPHONE) {
 			if (outputDevices & AudioSystem::DEVICE_OUT_SPEAKER) {
 				LOGI("Routing audio to No microphone Wired Headset and Speaker 2 (%d,%x)\n", mMode, outputDevices);
-                sndDevice = SND_DEVICE_HEADSET_AND_SPEAKER;
+                sndDevice = SND_DEVICE_SPEAKER_MIDI;//SND_DEVICE_HEADSET_AND_SPEAKER;
                 audProcess = (ADRC_ENABLE | EQ_ENABLE | RX_IIR_ENABLE);
             } else {
                 LOGI("Routing audio to No microphone Wired Headset 2 (%d,%x)\n", mMode, outputDevices);
