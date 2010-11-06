@@ -180,8 +180,9 @@ public:
 
     virtual status_t    setVoiceVolume(float volume);
     virtual status_t    setMasterVolume(float volume);
+#ifdef HAVE_FM_RADIO
     virtual status_t    setFmVolume(float volume);
-
+#endif
     virtual status_t    setMode(int mode);
 
     // mic mute
@@ -235,7 +236,9 @@ private:
     status_t    doAudience_A1026_Control(int Mode, bool Record, uint32_t Routes);
     status_t    doRouting();
     status_t    updateACDB();
+#ifdef HAVE_FM_RADIO
     status_t    setFmOnOff(bool onoff);
+#endif
     uint32_t    getACDB(int mode, int device);
     AudioStreamInMSM72xx*   getActiveInput_l();
     status_t    do_tpa2018_control(int mode);
