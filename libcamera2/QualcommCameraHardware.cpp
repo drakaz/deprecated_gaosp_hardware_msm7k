@@ -2329,7 +2329,10 @@ void QualcommCameraHardware::receiveRawPicture()
         else LOGE("receiveRawPicture X: jpeg_encoder_init failed.");
     }
     else LOGD("JPEG callback is NULL, not encoding image.");
-    deinitRaw();
+
+    if( mRawInitialized ) {
+    	deinitRaw();
+    }
     
     LOGD("receiveRawPicture: X");
 }
