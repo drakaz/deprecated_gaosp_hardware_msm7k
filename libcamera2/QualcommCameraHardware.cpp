@@ -402,7 +402,8 @@ QualcommCameraHardware::QualcommCameraHardware()
       mAutoFocusThreadRunning(false),
       mAutoFocusFd(-1),
       mInPreviewCallback(false),
-      mCameraRecording(false)
+      mCameraRecording(false),
+      mVideoFlashRunning(false)
 {
     if((pthread_create(&w_thread, NULL, opencamerafd, NULL ))!=0){
     	LOGE("Camera open thread creation failed") ;
@@ -1592,7 +1593,7 @@ void QualcommCameraHardware::runAutoFocus()
         return;
     }
     
-    mPictureNeedFlash = flashNeeded() && ! isContinuousFocus() ;
+    mPictureNeedFlash = flashNeeded() && ! isContinuousFocus()  && ! mCameraRecording ;
     
     if( mPictureNeedFlash ) {
 	LOGD("flash needed") ;
@@ -2181,6 +2182,8 @@ void QualcommCameraHardware::receivePreviewFrame(struct msm_frame_t *frame)
 //    LOGD("receivePreviewFrame X");
 }
 
+
+
 status_t QualcommCameraHardware::startRecording()
 {
     LOGD("startRecording E");
@@ -2188,6 +2191,11 @@ status_t QualcommCameraHardware::startRecording()
 
     mReleasedRecordingFrame = false;
     mCameraRecording = true;
+
+    mVideoFlashRunning = flashNeeded() ;
+    if( mVideoFlashRunning ) {
+    	startFlashMovie() ;
+    }
 
     return startPreviewInternal();
 }
@@ -2204,6 +2212,12 @@ void QualcommCameraHardware::stopRecording()
         mRecordFrameLock.unlock();
 
         mCameraRecording = false;
+
+        if( mVideoFlashRunning ) {
+        	stopFlashMovie() ;
+        	mVideoFlashRunning = false ;
+        }
+
 
         if(mMsgEnabled & CAMERA_MSG_PREVIEW_FRAME) {
             LOGD("stopRecording: X, preview still in progress");
@@ -3195,9 +3209,6 @@ bool QualcommCameraHardware::flashNeeded()
     LOGD("flash-mode == off") ;
     return false; 
   }
-
-  
-
 }
 
 void QualcommCameraHardware::startFlashMovie()

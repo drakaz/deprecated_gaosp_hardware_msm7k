@@ -462,6 +462,8 @@ private:
     Mutex mAFLock ;
     bool mAFCanceled ;
 
+    bool mVideoFlashRunning ;
+
     Mutex mRecordLock;
     Mutex mRecordFrameLock;
     Condition mRecordWait;
