@@ -27,6 +27,8 @@ include $(BUILD_SHARED_LIBRARY)
 #             Make the Shared library libaudio
 # ---------------------------------------------------------------------------------
 
+ifneq ($(BOARD_PREBUILT_LIBAUDIO),true)
+
 include $(CLEAR_VARS)
 
 LOCAL_MODULE := libaudio
@@ -52,6 +54,8 @@ LOCAL_CFLAGS += -fno-short-enums
 LOCAL_STATIC_LIBRARIES += libaudiointerface
 
 include $(BUILD_SHARED_LIBRARY)
+
+endif # not BOARD_PREBUILT_LIBAUDIO
 
 endif # not BUILD_TINY_ANDROID
 
