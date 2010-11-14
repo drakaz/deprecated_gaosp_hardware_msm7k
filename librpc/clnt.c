@@ -613,10 +613,6 @@ CLIENT *clnt_create(
 
         pthread_mutex_lock(&rx_mutex);
 
-        /* Implment backwards compatibility */
-        vers = (vers & 0x80000000) ? vers : vers & 0xFFFF0000;
-
-
         snprintf(name, sizeof(name), "/dev/oncrpc/%08x:%08x",
                  (uint32_t)prog, (int)vers);
         client->xdr = xdr_init_common(name, 1 /* client XDR */);
