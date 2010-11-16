@@ -1,19 +1,3 @@
-/* Copyright (c) 2009, Code Aurora Forum.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- *
- */
-
 #include <rpc/rpc.h>
 #include <arpa/inet.h>
 #include <rpc/rpc_router_ioctl.h>
@@ -25,7 +9,6 @@
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
-#include <poll.h>
 
 #include <hardware_legacy/power.h>
 
@@ -147,23 +130,7 @@ static void *cb_context(void *__u)
                       (uint32_t)prog, (int)vers);
                     xdr_destroy_common(*svc_xdr);
                 }
-
-                /* Do these checks before the clone */
-                if (client->xdr->in_len < 0) {
-                    E("%08x:%08x xdr->in_len = %i error %s (%d)",
-                        client->xdr->in_len,
-                        client->xdr->x_prog, client->xdr->x_vers,
-                        strerror(errno), errno);
-                    continue;
-                }
-                if (client->xdr->out_next < 0) {
-                    E("%08x:%08x xdr->out_next = %i error %s (%d)",
-                        client->xdr->out_next,
-                        client->xdr->x_prog, client->xdr->x_vers,
-                    strerror(errno), errno);
-                    continue;
-                }
-
+                
                 D("%08x:%08x cloning XDR for "
                   "callback client %08x:%08x.\n",
                   client->xdr->x_prog,
@@ -216,35 +183,18 @@ static void *cb_context(void *__u)
 static void *rx_context(void *__u __attribute__((unused)))
 {
     int n;
+    struct timeval tv;
     fd_set rfds;
-    int ret;
-    struct pollfd fd;
-    int timeout = 0;
-
-    memset((void *) &fd, 0, sizeof(fd));
     while(num_clients) {
         pthread_mutex_lock(&rx_mutex);
         rfds = rx_fdset;
         pthread_mutex_unlock(&rx_mutex);
-
-        ret = poll(&fd, 1, timeout);
-        if (ret > 0) {
-            if (fd.revents & POLLERR) {
-                D("Modem is resetting.\n");
-                timeout = 500;
-                continue;
-            }
-        }
-        timeout = 0;
-
-        n = select(max_rxfd + 1, (fd_set *)&rfds, NULL, NULL, NULL);
+        tv.tv_sec = 0; tv.tv_usec = 500 * 1000;
+        n = select(max_rxfd + 1, (fd_set *)&rfds, NULL, NULL, &tv);
         if (n < 0) {
             E("select() error %s (%d)\n", strerror(errno), errno);
             continue;
         }
-
-	if (!num_clients)
-            break;
 
         if (n) {
             pthread_mutex_lock(&rx_mutex); /* sync access to the client list */
@@ -271,24 +221,7 @@ static void *rx_context(void *__u __attribute__((unused)))
                     D("%08x:%08x reading data.\n",
                       client->xdr->x_prog, client->xdr->x_vers);
                     grabPartialWakeLock();
-                    ret = client->xdr->xops->read(client->xdr);
-                    if (ret == FALSE) {
-                        E("%08x:%08x xops->read() error %s (%d)\n",
-                          client->xdr->x_prog, client->xdr->x_vers,
-                        strerror(errno), errno);
-
-                        if (errno == ENETRESET) {
-                            E("%08x:%08x clearing reset.\n",
-                                client->xdr->x_prog, client->xdr->x_vers);
-                                client->xdr->xops->xdr_control(
-                                client->xdr,
-                                RPC_ROUTER_IOCTL_CLEAR_NETRESET, NULL);
-                           fd.fd = client->xdr->fd;
-                        }
-
-                        pthread_mutex_unlock(&client->input_xdr_lock);
-                        continue;
-                    }
+                    client->xdr->xops->read(client->xdr);
                     client->input_xdr_busy = 1;
                     pthread_mutex_unlock(&client->input_xdr_lock);
 
@@ -594,9 +527,6 @@ bool_t xdr_recv_reply_header (xdr_s_type *xdr, rpc_reply_header *reply)
     return TRUE;
 } /* xdr_recv_reply_header */
 
-/* pipe to wake up receive thread */
-static int wakeup_pipe[2];
-
 CLIENT *clnt_create(
     char * host,
     uint32 prog,
@@ -628,14 +558,7 @@ CLIENT *clnt_create(
 
         if (!num_clients) {
             FD_ZERO(&rx_fdset);
-            if (pipe(wakeup_pipe) == -1) {
-               E("failed to create pipe\n");
-               free(client);
-               pthread_mutex_unlock(&rx_mutex);
-               return NULL;
-            }
-            FD_SET(wakeup_pipe[0], &rx_fdset);
-            max_rxfd = wakeup_pipe[0];
+            max_rxfd = 0;
         }
 
         FD_SET(client->xdr->fd, &rx_fdset);
@@ -646,11 +569,7 @@ CLIENT *clnt_create(
         if (!num_clients++) {
             D("launching RX thread.\n");
             pthread_create(&rx_thread, NULL, rx_context, NULL);
-        } else {
-            /* client added, wake up rx_thread */
-            if (write(wakeup_pipe[1], "a", 1) < 0)
-	        E("error writing to pipe\n");
-	}
+        }
 
         pthread_mutexattr_init(&client->lock_attr);
 //      pthread_mutexattr_settype(&client->lock_attr, PTHREAD_MUTEX_RECURSIVE);
@@ -711,17 +630,9 @@ void clnt_destroy(CLIENT *client) {
             }
         }
         if (!num_clients) {
-            /* no clients, wake up rx_thread */
-            if (write(wakeup_pipe[1], "d", 1) < 0)
-	        E("error writing to pipe\n");
-
             D("stopping rx thread!\n");
             pthread_join(rx_thread, NULL);
             D("stopped rx thread\n");
-
-            FD_CLR(wakeup_pipe[0], &rx_fdset);
-            close(wakeup_pipe[0]);
-            close(wakeup_pipe[1]);
         }
         pthread_mutex_unlock(&rx_mutex); /* sync access to the client list */
  
