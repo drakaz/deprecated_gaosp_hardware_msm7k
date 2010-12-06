@@ -21,6 +21,10 @@ ifeq ($(BOARD_HAVE_BLUETOOTH),true)
   LOCAL_CFLAGS += -DWITH_A2DP
 endif
 
+ifeq ($(BOARD_HAVE_FM_RADIO),true)
+  LOCAL_CFLAGS += -DHAVE_FM_RADIO
+endif
+
 include $(BUILD_SHARED_LIBRARY)
 
 # ---------------------------------------------------------------------------------
