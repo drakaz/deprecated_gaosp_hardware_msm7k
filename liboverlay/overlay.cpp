@@ -111,9 +111,8 @@ static int get_format(int format) {
 		case OVERLAY_FORMAT_RGBA_8888:     return MDP_RGBA_8888;
 		case OVERLAY_FORMAT_BGRA_8888:     return MDP_BGRA_8888;
 		case OVERLAY_FORMAT_RGB_565:       return MDP_RGB_565;
-		case OVERLAY_FORMAT_YCbCr_422_SP:  return MDP_Y_CBCR_H2V1;
-		case OVERLAY_FORMAT_YCbCr_420_SP:  return MDP_Y_CBCR_H2V2;
-                case OVERLAY_FORMAT_YCrCb_420_SP:  return MDP_Y_CRCB_H2V2;
+		case HAL_PIXEL_FORMAT_YCbCr_422_SP:  return MDP_Y_CBCR_H2V1;
+                case HAL_PIXEL_FORMAT_YCrCb_420_SP:  return MDP_Y_CRCB_H2V2;
 	}
 	return -1;
 }
@@ -126,9 +125,8 @@ static int get_size(int format, int w, int h) {
 		case OVERLAY_FORMAT_RGBA_8888:     size *= 4; break;
 		case OVERLAY_FORMAT_BGRA_8888:     size *= 4; break;
 		case OVERLAY_FORMAT_RGB_565:       size *= 2; break;
-		case OVERLAY_FORMAT_YCbCr_422_SP:  size *= 2; break;
-		case OVERLAY_FORMAT_YCbCr_420_SP:  size = (size*3)/2; break;
-		case OVERLAY_FORMAT_YCrCb_420_SP:  size = (size*3)/2; break;
+		case HAL_PIXEL_FORMAT_YCbCr_422_SP:  size *= 2; break;
+		case HAL_PIXEL_FORMAT_YCrCb_420_SP:  size = (size*3)/2; break;
 		default: return 0;
 	}
 	return size;
