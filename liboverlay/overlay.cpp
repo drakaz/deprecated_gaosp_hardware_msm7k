@@ -128,6 +128,7 @@ static int get_size(int format, int w, int h) {
 		case OVERLAY_FORMAT_RGB_565:       size *= 2; break;
 		case HAL_PIXEL_FORMAT_YCbCr_422_SP:  size *= 2; break;
 		case HAL_PIXEL_FORMAT_YCrCb_420_SP:  size = (size*3)/2; break;
+		case HAL_PIXEL_FORMAT_YCbCr_420_SP:  size = (size*3)/2; break;
 		default: return 0;
 	}
 	return size;
