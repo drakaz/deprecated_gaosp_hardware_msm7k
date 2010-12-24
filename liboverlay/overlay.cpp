@@ -35,6 +35,8 @@
 #include <linux/msm_mdp.h>
 #include <linux/msm_rotator.h>
 
+#include "gralloc_priv.h"
+
 #define USE_MSM_ROTATOR
 /*****************************************************************************/
 
