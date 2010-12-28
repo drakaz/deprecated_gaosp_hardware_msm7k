@@ -21,10 +21,6 @@ ifeq ($(BOARD_HAVE_BLUETOOTH),true)
   LOCAL_CFLAGS += -DWITH_A2DP
 endif
 
-ifeq ($(BOARD_HAVE_FM_RADIO),true)
-  LOCAL_CFLAGS += -DHAVE_FM_RADIO
-endif
-
 include $(BUILD_SHARED_LIBRARY)
 
 
@@ -49,10 +45,6 @@ endif
 LOCAL_SRC_FILES += AudioHardware.cpp
 
 LOCAL_CFLAGS += -fno-short-enums
-
-ifeq ($(BOARD_HAVE_FM_RADIO),true)
-  LOCAL_CFLAGS += -DHAVE_FM_RADIO
-endif
 
 LOCAL_STATIC_LIBRARIES += libaudiointerface
 ifeq ($(BOARD_HAVE_BLUETOOTH),true)
