@@ -23,8 +23,6 @@ endif
 
 include $(BUILD_SHARED_LIBRARY)
 
-ifneq ($(BOARD_PREBUILT_LIBAUDIO),true)
-
 include $(CLEAR_VARS)
 
 LOCAL_MODULE := libaudio
@@ -53,8 +51,6 @@ ifeq ($(BOARD_HAVE_BLUETOOTH),true)
 endif
 
 include $(BUILD_SHARED_LIBRARY)
-
-endif # not BOARD_PREBUILT_LIBAUDIO
 
 endif # not BUILD_TINY_ANDROID
 

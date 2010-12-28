@@ -47,7 +47,7 @@ extern "C" void destroyAudioPolicyManager(AudioPolicyInterface *interface)
 }
 
 // ---
-
+#ifdef HAVE_FM_RADIO
 status_t AudioPolicyManager::setDeviceConnectionState(AudioSystem::audio_devices device,
                                                   AudioSystem::device_connection_state state,
                                                   const char *device_address)
@@ -234,6 +234,7 @@ status_t AudioPolicyManager::setDeviceConnectionState(AudioSystem::audio_devices
     LOGW("setDeviceConnectionState() invalid device: %x", device);
     return BAD_VALUE;
 }
+#endif
 
 uint32_t AudioPolicyManager::getDeviceForStrategy(routing_strategy strategy, bool fromCache)
 {
@@ -356,6 +357,7 @@ uint32_t AudioPolicyManager::getDeviceForStrategy(routing_strategy strategy, boo
         // FALL THROUGH
 
     case STRATEGY_MEDIA: {
+#ifdef HAVE_FM_RADIO
         //To route FM stream to speaker when headset is connected, a new switch case is added.
         //case AudioSystem::FORCE_SPEAKER for STRATEGY_MEDIA will come only when we need to route
         //FM stream to speaker.
@@ -366,12 +368,9 @@ uint32_t AudioPolicyManager::getDeviceForStrategy(routing_strategy strategy, boo
         if (device2 == 0) {
             device2 = mAvailableOutputDevices & AudioSystem::DEVICE_OUT_AUX_DIGITAL;
         }
-        if (device2 == 0) {
-            device2 = mAvailableOutputDevices & AudioSystem::DEVICE_OUT_WIRED_HEADPHONE;
-        }
-        if (device2 == 0) {
-            device2 = mAvailableOutputDevices & AudioSystem::DEVICE_OUT_WIRED_HEADSET;
-        }
+#else
+        uint32_t device2 = mAvailableOutputDevices & AudioSystem::DEVICE_OUT_AUX_DIGITAL;
+#endif
 #ifdef WITH_A2DP
         if (mA2dpOutput != 0) {
             if (device2 == 0) {
@@ -385,6 +384,25 @@ uint32_t AudioPolicyManager::getDeviceForStrategy(routing_strategy strategy, boo
                                AudioSystem::DEVICE_OUT_WIRED_HEADPHONE |
                                AudioSystem::DEVICE_OUT_WIRED_HEADSET);
                 }
+            }
+        }
+#endif
+        if (device2 == 0) {
+            device2 = mAvailableOutputDevices & AudioSystem::DEVICE_OUT_WIRED_HEADPHONE;
+        }
+        if (device2 == 0) {
+            device2 = mAvailableOutputDevices & AudioSystem::DEVICE_OUT_WIRED_HEADSET;
+        }
+#ifdef WITH_A2DP
+        if (mA2dpOutput != 0) {
+            if (device2 == 0) {
+                device2 = mAvailableOutputDevices & AudioSystem::DEVICE_OUT_BLUETOOTH_A2DP;
+            }
+            if (device2 == 0) {
+                device2 = mAvailableOutputDevices & AudioSystem::DEVICE_OUT_BLUETOOTH_A2DP_HEADPHONES;
+            }
+            if (device2 == 0) {
+                device2 = mAvailableOutputDevices & AudioSystem::DEVICE_OUT_BLUETOOTH_A2DP_SPEAKER;
             }
         }
 #endif
@@ -459,6 +477,7 @@ float AudioPolicyManager::computeVolume(int stream, int index, audio_io_handle_t
     return volume;
 }
 
+#ifdef HAVE_FM_RADIO
 void AudioPolicyManager::setOutputDevice(audio_io_handle_t output, uint32_t device, bool force, int delayMs)
 {
     LOGV("setOutputDevice() output %d device %x delayMs %d", output, device, delayMs);
@@ -527,5 +546,6 @@ void AudioPolicyManager::setOutputDevice(audio_io_handle_t output, uint32_t devi
         setStrategyMute(STRATEGY_MEDIA, false, output, delayMs);
     }
 }
+#endif
 
 }; // namespace android
