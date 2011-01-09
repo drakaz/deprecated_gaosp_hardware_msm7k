@@ -484,7 +484,7 @@ public:
 
 		ri->rotations = flag;
 
-		if (flag == MDP_ROT_NOP)
+		if ((flag & MDP_ROT_MASK) == MDP_ROT_NOP)
 			ri->enable = 0;
 		else
 			ri->enable = 1;
@@ -562,7 +562,7 @@ public:
 					obj->rotator_dest_swap();
 				}
 
-				ov.user_data[0] = flag;
+				ov.user_data[0] = (ov.user_data[0] & ~MDP_ROT_MASK) | flag;
 
 				result = overlay_setRot(obj->getRotFd(), obj->getRot(), flag);
 
@@ -731,7 +731,7 @@ public:
 			return -errno;
 		}
 
-		if (ov.user_data[0] == MDP_ROT_90) {
+		if (ov.user_data[0] & MDP_ROT_90) {
 			tmp = x;
 			x = ov.src.width - (y + h);
 			y = tmp;
