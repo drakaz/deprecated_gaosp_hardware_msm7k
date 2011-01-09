@@ -529,10 +529,10 @@ public:
 			case OVERLAY_DITHER:
 				if (value) ov.user_data[0] |= MDP_DITHER;
 				else ov.user_data[0] &= ~MDP_DITHER;
-				if (ioctl(obj->getOvFd(), MSMFB_OVERLAY_SET, &ov))
+				if (ioctl(obj->getOvFd(), MSMFB_OVERLAY_SET, &ov)) {
 					LOGE("%s: MSMFB_OVERLAY_SET error!", __FUNCTION__);
-				else
 					result = -EINVAL;
+				}
 				break;
 			case OVERLAY_ROTATION_DEG:
 				if (value == 0) value = 0;
@@ -566,11 +566,13 @@ public:
 
 				result = overlay_setRot(obj->getRotFd(), obj->getRot(), flag);
 
-				if (ioctl(obj->getOvFd(), MSMFB_OVERLAY_SET, &ov))
+				if (ioctl(obj->getOvFd(), MSMFB_OVERLAY_SET, &ov)) {
 					LOGE("%s: MSMFB_OVERLAY_SET error!", __FUNCTION__);
-				else
-#endif
 					result = -EINVAL;
+				}
+#else
+				result = -EINVAL;
+#endif
 				break;
 			default:
 				result = -EINVAL;
